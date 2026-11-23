@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "2017657524",
+    "project_id": "peersync-11326",
+    "storage_bucket": "peersync-11326.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:2017657524:android:f740bcb1ceef8f53280de1",
+        "android_client_info": {
+          "package_name": "com.example.peersync_mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC5KES8PHAa2n7r_ZYhfkrFdEsi04EoKLU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
