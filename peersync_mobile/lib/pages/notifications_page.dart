@@ -1,5 +1,6 @@
+import 'dart:async';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
-
 import '../core/a11y/app_a11y.dart';
 import '../core/a11y/status_presentation.dart';
 import '../core/utils/error_messages.dart';
@@ -10,12 +11,15 @@ import '../widgets/shared_widgets.dart';
 
 class NotificationsPage extends StatefulWidget {
   final ValueChanged<int>? onUnreadCountChanged;
+  final ValueListenable<int> refreshSignal;
   final VoidCallback? onBack;
+
 
   const NotificationsPage({
     super.key,
     this.onUnreadCountChanged,
     this.onBack,
+    required this.refreshSignal,
   });
 
   @override
@@ -23,50 +27,90 @@ class NotificationsPage extends StatefulWidget {
 }
 
 class _NotificationsPageState extends State<NotificationsPage> {
-  String filter = 'All';
+    String filter = 'All';
 
-  List<AppNotification> _notifications = [];
+    List<AppNotification> _notifications = [];
 
-  bool _isLoading = true;
-  bool _isMarkingAllRead = false;
-  String? _errorMessage;
+    bool _isLoading = true;
+    bool _isMarkingAllRead = false;
+    String? _errorMessage;
 
-  @override
-  void initState() {
-    super.initState();
-    _loadNotifications();
-  }
+    // Prevents an older request from overwriting a newer refresh.
+    int _loadRequestId = 0;
 
-  void _notifyUnreadCountChanged() {
-    widget.onUnreadCountChanged?.call(_unreadCount);
-  }
+    int _lastRefreshSignal = 0;
 
-  Future<void> _loadNotifications() async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
+    @override
+    void initState() {
+      super.initState();
 
-    try {
-      final notifications = await ApiService.getNotifications();
+      _lastRefreshSignal = widget.refreshSignal.value;
+      widget.refreshSignal.addListener(_onRefreshSignalChanged);
 
-      if (!mounted) return;
-
-      setState(() {
-        _notifications = notifications;
-        _isLoading = false;
-      });
-
-      _notifyUnreadCountChanged();
-    } catch (e) {
-      if (!mounted) return;
-
-      setState(() {
-        _errorMessage = friendlyErrorMessage(e);
-        _isLoading = false;
-      });
+      _loadNotifications();
     }
-  }
+
+    @override
+    void dispose() {
+      widget.refreshSignal.removeListener(_onRefreshSignalChanged);
+      super.dispose();
+    }
+
+    void _onRefreshSignalChanged() {
+      final currentSignal = widget.refreshSignal.value;
+
+      if (currentSignal == _lastRefreshSignal) return;
+
+      _lastRefreshSignal = currentSignal;
+
+      // Keep the existing list visible while the latest data is fetched.
+      unawaited(_loadNotifications(silent: true));
+    }
+
+    void _notifyUnreadCountChanged() {
+      widget.onUnreadCountChanged?.call(_unreadCount);
+    }
+
+    Future<void> _loadNotifications({bool silent = false}) async {
+      final requestId = ++_loadRequestId;
+
+      if (!silent) {
+        setState(() {
+          _isLoading = true;
+          _errorMessage = null;
+        });
+      } else {
+        setState(() {
+          _errorMessage = null;
+        });
+      }
+
+      try {
+        final notifications = await ApiService.getNotifications();
+
+        if (!mounted || requestId != _loadRequestId) return;
+
+        setState(() {
+          _notifications = notifications;
+          _isLoading = false;
+          _errorMessage = null;
+        });
+
+        _notifyUnreadCountChanged();
+      } catch (e) {
+        if (!mounted || requestId != _loadRequestId) return;
+
+        setState(() {
+          _isLoading = false;
+
+          // Do not replace a working notification list with an error
+          // just because a background refresh temporarily failed.
+          if (!silent || _notifications.isEmpty) {
+            _errorMessage = friendlyErrorMessage(e);
+          }
+        });
+      }
+    }
 
   List<AppNotification> get _filteredNotifications {
     switch (filter) {

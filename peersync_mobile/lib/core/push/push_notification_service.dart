@@ -151,6 +151,12 @@ class PushNotificationService {
   }
 
   static Future<void> _subscribeToTopics(String role) async {
+    if (kIsWeb) {
+      debugPrint(
+        'PeerSync: FCM topic subscriptions are skipped on web.',
+      );
+      return;
+    }
     final isProfessor = role.trim().toLowerCase() == 'professor';
 
     await _messaging.subscribeToTopic('all_users');
@@ -241,32 +247,34 @@ class PushNotificationService {
       _ => 'notifications',
     };
   }
+static Future<void> unregister({String? role}) async {
+  try {
+    final currentToken = _token;
 
-  /// Removes this device from the backend and from its topics. Called on
-  /// sign-out so a shared device stops receiving the previous user's pushes.
-  static Future<void> unregister({String? role}) async {
-    try {
-      final currentToken = _token;
+    if (currentToken != null && currentToken.isNotEmpty) {
+      await ApiService.delete('${ApiConfig.pushDevices}/$currentToken');
+    }
 
-      if (currentToken != null && currentToken.isNotEmpty) {
-        await ApiService.delete('${ApiConfig.pushDevices}/$currentToken');
-      }
-
+    // FCM topic subscriptions are not supported on web.
+    if (!kIsWeb) {
       final isProfessor = role?.trim().toLowerCase() == 'professor';
 
       await _messaging.unsubscribeFromTopic('all_users');
       await _messaging.unsubscribeFromTopic(
-        isProfessor == true ? 'role_professors' : 'role_students',
+        isProfessor ? 'role_professors' : 'role_students',
       );
-      await _detachListeners();
-      await _messaging.unregister();
-    } catch (_) {
-      // Best-effort only.
-    } finally {
-      _token = null;
-      _initialised = false;
     }
+
+    await _detachListeners();
+    await _messaging.unregister();
+  } catch (error) {
+    debugPrint('PeerSync push unregister warning: $error');
+  } finally {
+    _token = null;
+    _initialised = false;
+    _messageHandler = null;
   }
+}
 
   /// Cancels the native stream listeners so a new session can attach its own.
   static Future<void> _detachListeners() async {
