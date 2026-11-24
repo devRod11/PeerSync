@@ -1,7 +1,12 @@
+import logging
+
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from firebase_admin import auth
-from app.database.firebase import initialize_firebase, get_firestore_client
+
+from app.database.firebase import get_firestore_client, initialize_firebase
+
+logger = logging.getLogger("peersync.auth")
 
 
 # Extract the Bearer token from the Authorization header.
@@ -41,16 +46,16 @@ def get_current_user(
                 detail="Invalid authentication token."
             )
 
-    except Exception as error:
-        print("FIREBASE TOKEN VERIFICATION FAILED")
-        print("Error type:", type(error).__name__)
-        print("Error details:", str(error))
+    except Exception:
+        # Log the failure for operators without exposing token details to
+        # the client or to stdout.
+        logger.warning("Firebase ID token verification failed.", exc_info=True)
 
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired authentication token.",
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        ) from None
 
     # 3. Retrieve the user's profile from Firestore.
     try:
@@ -62,13 +67,13 @@ def get_current_user(
             .get()
         )
 
-    except Exception as error:
-        print(f"Firestore user lookup failed: {error}")
+    except Exception:
+        logger.exception("Firestore user lookup failed.")
 
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Unable to verify user profile."
-        )
+        ) from None
 
     # 4. Check whether the user profile exists.
     if not user_document.exists:

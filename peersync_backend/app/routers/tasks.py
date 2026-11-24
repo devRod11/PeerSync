@@ -1,11 +1,14 @@
 from datetime import datetime, timezone
 from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field, field_validator
 from google.cloud.firestore_v1.base_query import FieldFilter
+from pydantic import BaseModel, Field, field_validator
+
 from app.database.firebase import get_firestore_client
-from app.dependencies.auth import get_current_user, require_professor
-from app.services.notification_service import (create_task_assignment_notifications)
+from app.dependencies.auth import get_current_user
+from app.services.notification_service import create_task_assignment_notifications
+from app.services.push_service import send_task_assignment_push
 from app.services.task_status_service import recalculate_task_status
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
@@ -408,6 +411,13 @@ def create_task(
         task_title=task_data.title
     )
 
+    send_task_assignment_push(
+        db=db,
+        task_id=doc_ref.id,
+        assigned_to=task_data.assignedTo,
+        task_title=task_data.title
+    )
+
     return {
         "message": "Task created successfully.",
         "taskID": doc_ref.id,
@@ -571,6 +581,16 @@ def update_task(
     # Notify only newly assigned students
     if newly_assigned:
         create_task_assignment_notifications(
+            db=db,
+            task_id=task_id,
+            assigned_to=newly_assigned,
+            task_title=updates.get(
+                "title",
+                task.get("title", "Untitled Task")
+            )
+        )
+
+        send_task_assignment_push(
             db=db,
             task_id=task_id,
             assigned_to=newly_assigned,

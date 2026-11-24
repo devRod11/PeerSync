@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
+
 from google.cloud.firestore_v1.base_query import FieldFilter
+
 
 def create_task_assignment_notifications(
     db,

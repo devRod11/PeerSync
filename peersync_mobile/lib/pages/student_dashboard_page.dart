@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
-import '../theme/app_colors.dart';
-import '../models/authenticated_user.dart';
-import '../models/project.dart';
-import '../models/group.dart';
-import '../models/task.dart';
-import '../models/milestone.dart';
-import '../models/submission.dart';
+
+import '../core/a11y/app_a11y.dart';
 import '../models/announcement.dart';
+import '../models/authenticated_user.dart';
+import '../models/group.dart';
+import '../models/milestone.dart';
+import '../models/project.dart';
+import '../models/submission.dart';
+import '../models/task.dart';
 import '../services/api_service.dart';
+import '../theme/app_colors.dart';
 import '../widgets/shared_widgets.dart';
 
 class StudentDashboard extends StatefulWidget {
@@ -69,24 +71,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
     return name;
   }
 
-  String _formatDate(DateTime date) {
-    const months = [
-      'January',
-      'February',
-      'March',
-      'April',
-      'May',
-      'June',
-      'July',
-      'August',
-      'September',
-      'October',
-      'November',
-      'December',
-    ];
-
-    return '${months[date.month - 1]} ${date.day}, ${date.year}';
-  }
+  String _formatDate(DateTime date) => AppA11y.formatDate(date);
 
   String _formatTime(DateTime date) {
     final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
@@ -96,31 +81,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
     return '$hour:$minute $period';
   }
 
-  String _formatRelativeDate(DateTime? date) {
-    if (date == null) return 'Date unavailable';
-
-    final difference = DateTime.now().difference(date);
-
-    if (difference.inMinutes < 1 && !difference.isNegative) {
-      return 'Just now';
-    }
-
-    if (difference.inMinutes < 60 && !difference.isNegative) {
-      return '${difference.inMinutes} minutes ago';
-    }
-
-    if (difference.inHours < 24 && !difference.isNegative) {
-      return '${difference.inHours} hours ago';
-    }
-
-    if (difference.inDays == 1) return 'Yesterday';
-
-    if (difference.inDays > 1) {
-      return '${difference.inDays} days ago';
-    }
-
-    return _formatDate(date);
-  }
+  String _formatRelativeDate(DateTime? date) =>
+      AppA11y.relativeTime(date);
 
   int _daysUntil(DateTime date) {
     final today = DateTime.now();
@@ -141,15 +103,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const PageBody(
             children: [
-              SizedBox(height: 180),
-              Center(child: CircularProgressIndicator()),
-              SizedBox(height: 12),
-              Center(
-                child: Text(
-                  'Loading your dashboard...',
-                  style: subStyle,
-                ),
-              ),
+              SizedBox(height: 120),
+              LoadingView(message: 'Loading your dashboard\u2026'),
             ],
           );
         }
@@ -168,7 +123,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     const Icon(
                       Icons.cloud_off_outlined,
                       size: 38,
-                      color: Colors.redAccent,
+                      color: AppColors.danger,
                     ),
                     const SizedBox(height: 10),
                     const Text(
@@ -407,7 +362,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
             ),
 
             // Upcoming deadlines.
-            SectionHeading(
+            const SectionHeading(
               'Upcoming',
               action: 'See all',
             ),
@@ -441,7 +396,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
               }),
 
             // Student groups and projects.
-            SectionHeading(
+            const SectionHeading(
               'My classes',
               action: 'View all',
             ),
@@ -495,7 +450,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
               );
             }),
             // Recent announcements.
-            SectionHeading(
+            const SectionHeading(
               'Recent announcements',
               action: 'View feed',
             ),
@@ -518,7 +473,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
               }),
 
             // Latest Professor feedback.
-            SectionHeading('Latest feedback'),
+            const SectionHeading('Latest feedback'),
 
             if (latestFeedback == null)
               const InfoCard(

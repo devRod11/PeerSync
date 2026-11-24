@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../core/utils/error_messages.dart';
 import '../models/project.dart';
 import '../services/api_service.dart';
+import '../theme/app_colors.dart';
 import '../widgets/shared_widgets.dart';
 import 'group_management_page.dart';
 import 'professor_milestones_page.dart';
@@ -48,7 +50,7 @@ class _ClassManagementState extends State<ClassManagement> {
       if (!mounted) return;
 
       setState(() {
-        _errorMessage = e.toString();
+        _errorMessage = friendlyErrorMessage(e);
         _isLoading = false;
       });
     }
@@ -128,7 +130,7 @@ class _ClassManagementState extends State<ClassManagement> {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Unable to save project: $e')));
+          .showSnackBar(SnackBar(content: Text('Unable to save project: ${friendlyErrorMessage(e)}')));
     } finally {
       if (mounted) {
         setState(() {
@@ -140,35 +142,14 @@ class _ClassManagementState extends State<ClassManagement> {
 
   // Ask for confirmation before deleting a project.
   Future<void> _confirmDelete(Project project) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Delete project?'),
-          content: Text(
-            'Are you sure you want to delete '
-            '"${project.title}"? This action cannot be undone.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(dialogContext, false);
-              },
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: Colors.red),
-              onPressed: () {
-                Navigator.pop(dialogContext, true);
-              },
-              child: const Text('Delete'),
-            ),
-          ],
-        );
-      },
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Delete project?',
+      message: 'Are you sure you want to delete "${project.title}"? '
+          'This action cannot be undone.',
     );
 
-    if (confirmed == true) {
+    if (confirmed) {
       await _deleteProject(project);
     }
   }
@@ -190,7 +171,7 @@ class _ClassManagementState extends State<ClassManagement> {
 
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Unable to delete project: $e')));
+      ).showSnackBar(SnackBar(content: Text('Unable to delete project: ${friendlyErrorMessage(e)}')));
     }
   }
 
@@ -236,7 +217,7 @@ class _ClassManagementState extends State<ClassManagement> {
                       value: 'delete',
                       child: Row(
                         children: [
-                          Icon(Icons.delete_outline, color: Colors.red),
+                          Icon(Icons.delete_outline, color: AppColors.danger),
                           SizedBox(width: 8),
                           Text('Delete'),
                         ],
@@ -360,25 +341,11 @@ class _ClassManagementState extends State<ClassManagement> {
         if (_isSaving) const LinearProgressIndicator(),
 
         if (_isLoading)
-          const Padding(
-            padding: EdgeInsets.all(32),
-            child: Center(child: CircularProgressIndicator()),
-          )
+          const LoadingView(message: 'Loading classes…')
         else if (_errorMessage != null)
-          InfoCard(
-            child: Column(
-              children: [
-                const Icon(Icons.error_outline, color: Colors.red, size: 32),
-                const SizedBox(height: 8),
-                Text(_errorMessage!, textAlign: TextAlign.center),
-                const SizedBox(height: 12),
-                OutlinedButton.icon(
-                  onPressed: _loadProjects,
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Try again'),
-                ),
-              ],
-            ),
+          ErrorStateView(
+            message: _errorMessage!,
+            onRetry: _loadProjects,
           )
         else if (_filteredProjects.isEmpty)
           InfoCard(

@@ -2,17 +2,20 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:http/http.dart' as http;
+
 import '../config/api_config.dart';
-import '../models/authenticated_user.dart';
-import '../models/project.dart';
-import '../models/group.dart';
-import '../models/student_option.dart';
-import '../models/milestone.dart';
-import '../models/task.dart';
-import '../models/submission.dart';
+import '../core/cache/offline_cache.dart';
 import '../models/announcement.dart';
+import '../models/authenticated_user.dart';
+import '../models/group.dart';
+import '../models/milestone.dart';
 import '../models/notification.dart';
+import '../models/project.dart';
+import '../models/student_option.dart';
+import '../models/submission.dart';
+import '../models/task.dart';
 
 class ApiException implements Exception {
   final int statusCode;
@@ -96,17 +99,66 @@ class ApiService {
     throw ApiException(statusCode, message);
   }
 
+  /// Emits `true` while the app is showing cached data because the network is
+  /// unreachable, and `false` again after the next successful request.
+  static final ValueNotifier<bool> offline = ValueNotifier<bool>(false);
+
+  /// Path segments whose GET responses are cached for [OfflineCache.ttl].
+  static const Set<String> _cacheableSegments = {
+    'auth',
+    'projects',
+    'groups',
+    'milestones',
+    'tasks',
+    'submissions',
+    'announcements',
+    'notifications',
+  };
+
+  static bool _isCacheable(Uri uri) =>
+      uri.pathSegments.isNotEmpty &&
+      _cacheableSegments.contains(uri.pathSegments.first);
+
+  /// A stable cache key for a request: path plus sorted query parameters.
+  static String _cacheKey(Uri uri) {
+    final query = Map<String, String>.from(uri.queryParameters);
+    final keys = query.keys.toList()..sort();
+    final suffix = keys.map((key) => '$key=${query[key]}').join('&');
+
+    return suffix.isEmpty ? uri.path : '${uri.path}?$suffix';
+  }
+
+  static Future<dynamic> _readCache(String cacheKey, String? userId) async {
+    final entry = await OfflineCache.read(cacheKey, userId: userId);
+
+    if (entry == null) return null;
+
+    offline.value = true;
+    return entry.data;
+  }
+
   // Executes an authenticated HTTP request.
+  //
+  // GET requests are network-first: a successful response refreshes the
+  // three-day offline cache, and a network failure falls back to the cached
+  // copy so the Professor and Student screens still render without a
+  // connection. Mutating verbs are never cached.
   static Future<dynamic> _request(
     String method,
     String url, {
     Map<String, dynamic>? body,
     Map<String, String>? queryParameters,
+    bool cache = true,
   }) async {
+    final uri = Uri.parse(url).replace(queryParameters: queryParameters);
+
+    final isGet = method.toUpperCase() == 'GET';
+    final useCache = cache && isGet && _isCacheable(uri);
+    final cacheKey = _cacheKey(uri);
+    final userId = FirebaseAuth.instance.currentUser?.uid;
+
     try {
       final headers = await _getHeaders();
-
-      final uri = Uri.parse(url).replace(queryParameters: queryParameters);
 
       final encodedBody = body != null ? jsonEncode(body) : null;
 
@@ -143,24 +195,55 @@ class ApiService {
           throw Exception('Unsupported HTTP method: $method');
       }
 
-      return _handleResponse(response);
+      final decoded = _handleResponse(response);
+
+      if (useCache) {
+        unawaited(OfflineCache.write(cacheKey, decoded, userId: userId));
+      }
+
+      offline.value = false;
+
+      return decoded;
     } on ApiException {
+      // A real HTTP error (401/403/404/...) must reach the caller unchanged:
+      // falling back to stale data here would hide permission failures.
       rethrow;
     } on TimeoutException {
+      final cached = useCache ? await _readCache(cacheKey, userId) : null;
+
+      if (cached != null) return cached;
+
       throw Exception('The server took too long to respond. Please try again.');
-    } on http.ClientException {
-      throw Exception(
-        'Unable to connect to the server. Check your connection and backend.',
-      );
+    } catch (error) {
+      final cached = useCache ? await _readCache(cacheKey, userId) : null;
+
+      if (cached != null) return cached;
+
+      if (error is http.ClientException) {
+        throw Exception(
+          'Unable to connect to the server. Check your connection and backend.',
+        );
+      }
+
+      rethrow;
     }
   }
 
   // Reusable GET request.
+  //
+  // Pass `cache: false` for a request that must never be served from the
+  // offline store (for example a manual "Refresh" that should surface errors).
   static Future<dynamic> get(
     String url, {
     Map<String, String>? queryParameters,
+    bool cache = true,
   }) async {
-    return _request('GET', url, queryParameters: queryParameters);
+    return _request(
+      'GET',
+      url,
+      queryParameters: queryParameters,
+      cache: cache,
+    );
   }
 
   // Reusable POST request.

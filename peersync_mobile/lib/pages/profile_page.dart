@@ -1,5 +1,6 @@
 
 import 'package:flutter/material.dart';
+
 import '../models/authenticated_user.dart';
 import '../theme/app_colors.dart';
 import '../widgets/shared_widgets.dart';
@@ -136,6 +137,7 @@ class ProfilePage extends StatelessWidget {
           Expanded(
             child: PrimaryButton(
               label: 'Save changes',
+              enabled: false,
               onPressed: () {},
             ),
           ),
@@ -143,7 +145,7 @@ class ProfilePage extends StatelessWidget {
           Expanded(
             child: OutlineButtonX(
               label: 'Cancel',
-              onPressed: () {},
+              onPressed: () => Navigator.of(context).maybePop(),
             ),
           ),
         ],

@@ -5,7 +5,6 @@ from firebase_admin import credentials, firestore
 
 from app.core.config import BACKEND_ROOT, settings
 
-
 _firebase_app = None
 _firestore_client = None
 
@@ -35,7 +34,7 @@ def initialize_firebase():
             raise FileNotFoundError(
                 f"Firebase service account file not found: "
                 f"{credential_path}"
-            )
+            ) from None
 
         firebase_credential = credentials.Certificate(
             str(credential_path)

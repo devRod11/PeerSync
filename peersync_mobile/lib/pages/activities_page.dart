@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
+
+import '../core/a11y/app_a11y.dart';
+import '../core/a11y/status_presentation.dart';
+import '../core/utils/error_messages.dart';
 import '../models/authenticated_user.dart';
 import '../models/group.dart';
 import '../models/milestone.dart';
 import '../models/project.dart';
+import '../models/submission.dart';
 import '../models/task.dart';
 import '../services/api_service.dart';
+import '../theme/app_colors.dart';
 import '../widgets/shared_widgets.dart';
-import '../models/submission.dart';
 
 class ActivitiesPage extends StatefulWidget {
   final AuthenticatedUser user;
@@ -151,39 +156,18 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
     } catch (error) {
       if (!mounted) return;
       setState(() {
-        _errorMessage = error.toString();
+        _errorMessage = friendlyErrorMessage(error);
         _isLoading = false;
       });
     }
   }
 
-  String _formatDate(DateTime date) {
-    const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-    ];
+  String _formatDate(DateTime date) => AppA11y.formatDate(date);
 
-    return '${months[date.month - 1]} ${date.day}, ${date.year}';
-  }
-
-
-  String _statusLabel(String status) {
-    switch (status.toLowerCase()) {
-      case 'in_progress':
-        return 'IN PROGRESS';
-      case 'completed':
-        return 'COMPLETED';
-      default:
-        return 'PENDING';
-    }
-  }
 
   Widget _statusBadge(String status) {
-    return BadgeX(
-      _statusLabel(status),
-      dark: status.toLowerCase() == 'in_progress',
-      danger: status.toLowerCase() == 'pending',
-    );
+    // Status is conveyed by an icon plus a text label, never by color alone.
+    return StatusChip(presentation: StatusPresentation.forTask(status));
   }
 
   Group? _findGroup(String groupID) {
@@ -220,25 +204,14 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
   }
 
   Future<void> _deleteTask(Task task) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Delete task?'),
-        content: Text('Are you sure you want to delete "${task.title}"?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Delete task?',
+      message: 'Are you sure you want to delete "${task.title}"? '
+          'This action cannot be undone.',
     );
 
-    if (confirmed != true) return;
+    if (!confirmed) return;
 
     try {
       await ApiService.deleteTask(task.id);
@@ -345,39 +318,19 @@ Widget _buildSubmissionStatus(Task task) {
   final submission = _getLatestSubmission(task.id);
 
   if (submission == null) {
-    return const BadgeX('MY SUBMISSION: NOT SUBMITTED');
+    return const StatusChip(
+      presentation: StatusPresentation(
+        label: 'Not submitted',
+        icon: Icons.upload_file_outlined,
+        tone: StatusTone.neutral,
+      ),
+      prefix: 'My submission',
+    );
   }
 
-  final status = submission.status.toLowerCase();
-
-  String label;
-  bool dark = false;
-  bool danger = false;
-
-  switch (status) {
-    case 'pending':
-      label = 'MY SUBMISSION: PENDING REVIEW';
-      dark = true;
-      break;
-
-    case 'revision_required':
-      label = 'MY SUBMISSION: REVISION REQUIRED';
-      danger = true;
-      break;
-
-    case 'approved':
-      label = 'MY SUBMISSION: APPROVED';
-      dark = true;
-      break;
-
-    default:
-      label = 'MY SUBMISSION: ${status.toUpperCase()}';
-  }
-
-  return BadgeX(
-    label,
-    dark: dark,
-    danger: danger,
+  return StatusChip(
+    presentation: StatusPresentation.forSubmission(submission.status),
+    prefix: 'My submission',
   );
 }
 
@@ -603,7 +556,7 @@ Widget _buildSubmissionDetails(Task task) {
           padding: EdgeInsets.symmetric(vertical: 15),
           child: Column(
             children: [
-              Icon(Icons.assignment_outlined, size: 34, color: Colors.grey),
+              Icon(Icons.assignment_outlined, size: 34, color: AppColors.textMuted),
               SizedBox(height: 8),
               Text('No tasks found', style: titleStyle),
               SizedBox(height: 5),
@@ -660,10 +613,9 @@ Widget _buildSubmissionDetails(Task task) {
                             style: tinyCaps,
                           ),
                           const Spacer(),
-                          BadgeX(
-                            normalized.replaceAll('_', ' ').toUpperCase(),
-                            dark: normalized == 'in_progress',
-                            danger: normalized == 'overdue',
+                          StatusChip(
+                            presentation:
+                                StatusPresentation.forMilestone(normalized),
                           ),
                         ],
                       ),
@@ -696,33 +648,13 @@ Widget _buildSubmissionDetails(Task task) {
 
   Widget _buildLoadingOrError() {
     if (_isLoading) {
-      return const InfoCard(
-        child: Padding(
-          padding: EdgeInsets.all(22),
-          child: Center(child: CircularProgressIndicator()),
-        ),
-      );
+      return const LoadingView(message: 'Loading activities…');
     }
 
     if (_errorMessage != null) {
-      return InfoCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Unable to load activities', style: titleStyle),
-            const SizedBox(height: 6),
-            Text(_errorMessage!, style: subStyle),
-            const SizedBox(height: 10),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                onPressed: _loadActivities,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Try again'),
-              ),
-            ),
-          ],
-        ),
+      return ErrorStateView(
+        message: _errorMessage!,
+        onRetry: _loadActivities,
       );
     }
 
@@ -1089,14 +1021,7 @@ class _TaskFormDialogState extends State<_TaskFormDialog> {
     return null;
   }
 
-  String _formatDate(DateTime date) {
-    const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-    ];
-
-    return '${months[date.month - 1]} ${date.day}, ${date.year}';
-  }
+  String _formatDate(DateTime date) => AppA11y.formatDate(date);
 
   Future<void> _selectDueDate() async {
     final date = await showDatePicker(

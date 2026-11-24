@@ -1,11 +1,18 @@
 from datetime import datetime, timezone
 from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field, field_validator
 from google.cloud.firestore_v1.base_query import FieldFilter
+from pydantic import BaseModel, field_validator
+
 from app.database.firebase import get_firestore_client
 from app.dependencies.auth import get_current_user
-from app.services.notification_service import (create_announcement_notifications, sync_announcement_notifications, delete_announcement_notifications)
+from app.services.notification_service import (
+    create_announcement_notifications,
+    delete_announcement_notifications,
+    sync_announcement_notifications,
+)
+from app.services.push_service import send_announcement_push
 
 router = APIRouter(
     prefix="/announcements",
@@ -361,6 +368,10 @@ def create_announcement(
         doc_ref.id,
         announcement
     )
+
+    # Optional second channel: reach students whose app is closed. The in-app
+    # notification above is already committed, so a push failure is non-fatal.
+    send_announcement_push(db, doc_ref.id, announcement)
 
     return {
         "message": "Announcement created successfully.",

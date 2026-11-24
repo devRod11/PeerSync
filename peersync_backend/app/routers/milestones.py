@@ -1,10 +1,15 @@
 from datetime import datetime, timezone
 from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field, field_validator
 from google.cloud.firestore_v1.base_query import FieldFilter
+from pydantic import BaseModel, Field, field_validator
+
 from app.database.firebase import get_firestore_client
-from app.dependencies.auth import (get_current_user, require_professor,)
+from app.dependencies.auth import (
+    get_current_user,
+    require_professor,
+)
 
 router = APIRouter(prefix="/milestones", tags=["Milestones"])
 

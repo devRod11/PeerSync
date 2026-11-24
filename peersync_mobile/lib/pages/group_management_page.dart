@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+
+import '../core/utils/error_messages.dart';
 import '../models/group.dart';
 import '../models/project.dart';
 import '../models/student_option.dart';
 import '../services/api_service.dart';
+import '../theme/app_colors.dart';
+import '../widgets/shared_widgets.dart';
 import 'group_details_page.dart';
 
 class GroupManagementPage extends StatefulWidget {
@@ -51,7 +55,7 @@ class _GroupManagementPageState
         if (!mounted) return;
 
         setState(() {
-          errorMessage = e.toString();
+          errorMessage = friendlyErrorMessage(e);
           isLoading = false;
         });
       }
@@ -88,9 +92,7 @@ class _GroupManagementPageState
           foregroundColor: Colors.white,
         ),
         body: isLoading
-            ? const Center(
-                child: CircularProgressIndicator(),
-              )
+            ? const LoadingView(message: 'Loading groups\u2026')
             : errorMessage != null
                 ? Center(
                     child: Padding(
@@ -101,7 +103,7 @@ class _GroupManagementPageState
                           const Icon(
                             Icons.error_outline,
                             size: 48,
-                            color: Colors.red,
+                            color: AppColors.danger,
                           ),
                           const SizedBox(height: 12),
                           Text(
@@ -137,14 +139,14 @@ class _GroupManagementPageState
               Icon(
                 Icons.groups_outlined,
                 size: 64,
-                color: Colors.grey,
+                color: AppColors.textMuted,
               ),
               SizedBox(height: 12),
               Text(
                 'No groups created yet.',
                 style: TextStyle(
                   fontSize: 16,
-                  color: Colors.grey,
+                  color: AppColors.textMuted,
                 ),
               ),
             ],
@@ -194,7 +196,7 @@ class _GroupManagementPageState
 
                   // Refresh the group list when returning.
                   if (mounted) {
-                    loadGroupManagementData();
+                    await loadGroupManagementData();
                   }
                 },
               ),
@@ -270,7 +272,7 @@ class _CreateGroupDialogState extends State<CreateGroupDialog> {
       if (!mounted || selectedProjectID != projectID) return;
 
       setState(() {
-        errorMessage = 'Unable to load available students: $e';
+        errorMessage = 'Unable to load available students: ${friendlyErrorMessage(e)}';
       });
     } finally {
       if (mounted && selectedProjectID == projectID) {
@@ -330,7 +332,7 @@ class _CreateGroupDialogState extends State<CreateGroupDialog> {
       if (!mounted) return;
 
       setState(() {
-        errorMessage = e.toString();
+        errorMessage = friendlyErrorMessage(e);
         isSaving = false;
       });
     }
@@ -415,11 +417,8 @@ class _CreateGroupDialogState extends State<CreateGroupDialog> {
                     'Select a project to view eligible students.',
                   )
                 else if (isLoadingStudents)
-                  const Padding(
-                    padding: EdgeInsets.all(20),
-                    child: Center(
-                      child: CircularProgressIndicator(),
-                    ),
+                  const LoadingView(
+                    message: 'Loading eligible students\u2026',
                   )
                 else if (availableStudents.isEmpty)
                   const Text(
@@ -432,7 +431,7 @@ class _CreateGroupDialogState extends State<CreateGroupDialog> {
                     ),
                     decoration: BoxDecoration(
                       border: Border.all(
-                        color: Colors.grey,
+                        color: AppColors.textMuted,
                       ),
                       borderRadius: BorderRadius.circular(8),
                     ),
@@ -509,7 +508,7 @@ class _CreateGroupDialogState extends State<CreateGroupDialog> {
                   Text(
                     errorMessage!,
                     style: const TextStyle(
-                      color: Colors.red,
+                      color: AppColors.danger,
                       fontSize: 13,
                     ),
                   ),
@@ -517,7 +516,7 @@ class _CreateGroupDialogState extends State<CreateGroupDialog> {
                 Text(
                   '${selectedMemberIDs.length} student(s) selected',
                   style: const TextStyle(
-                    color: Colors.grey,
+                    color: AppColors.textMuted,
                     fontSize: 12,
                   ),
                 ),

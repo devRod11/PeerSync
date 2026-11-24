@@ -1,6 +1,5 @@
-from google.cloud.firestore import SERVER_TIMESTAMP
-from datetime import datetime
 from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 

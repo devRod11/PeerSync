@@ -1,8 +1,13 @@
+import hashlib
+from datetime import datetime, timezone
 from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
 from app.database.firebase import get_firestore_client
 from app.dependencies.auth import get_current_user
+from app.services.push_service import DEVICE_TOKENS_COLLECTION
 
 router = APIRouter(
     prefix="/notifications",
@@ -11,6 +16,13 @@ router = APIRouter(
 
 class NotificationReadUpdate(BaseModel):
     isRead: bool
+
+
+class DeviceRegistration(BaseModel):
+    """A push registration token for one browser or mobile install."""
+
+    token: str = Field(min_length=8, max_length=4096)
+    platform: Optional[str] = Field(default=None, max_length=32)
 
 def get_db():
     return get_firestore_client()
@@ -114,6 +126,81 @@ def get_notifications(
         "unreadCount": unread_count,
         "notifications": notifications
     }
+
+@router.post("/devices", status_code=201)
+def register_device(
+    registration: DeviceRegistration,
+    current_user: dict = Depends(get_current_user)
+):
+    """Register (or refresh) an FCM token for the authenticated user.
+
+    The document ID is a hash of the token so repeated launches update the same
+    record instead of creating duplicates.
+    """
+
+    db = get_db()
+    user_id = get_user_id(current_user)
+
+    token = registration.token.strip()
+
+    if not token:
+        raise HTTPException(
+            status_code=400,
+            detail="A push registration token is required."
+        )
+
+    document_id = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    now = datetime.now(timezone.utc)
+
+    doc_ref = db.collection(DEVICE_TOKENS_COLLECTION).document(document_id)
+    existing = doc_ref.get()
+
+    doc_ref.set({
+        "createdAt": (
+            (existing.to_dict() or {}).get("createdAt", now)
+            if existing.exists
+            else now
+        ),
+        "platform": registration.platform,
+        "token": token,
+        "updatedAt": now,
+        "userID": user_id
+    })
+
+    return {
+        "message": "Push device registered successfully.",
+        "deviceID": document_id
+    }
+
+@router.delete("/devices/{token}")
+def unregister_device(
+    token: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Remove a push token, for example on sign-out.
+
+    A user may only remove their own token.
+    """
+
+    db = get_db()
+    user_id = get_user_id(current_user)
+
+    document_id = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    doc_ref = db.collection(DEVICE_TOKENS_COLLECTION).document(document_id)
+    doc = doc_ref.get()
+
+    if not doc.exists:
+        return {"message": "Push device already removed."}
+
+    if (doc.to_dict() or {}).get("userID") != user_id:
+        raise HTTPException(
+            status_code=403,
+            detail="You cannot remove this push device."
+        )
+
+    doc_ref.delete()
+
+    return {"message": "Push device removed successfully."}
 
 @router.get("/{notification_id}")
 def get_notification(

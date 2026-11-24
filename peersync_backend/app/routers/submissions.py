@@ -1,8 +1,10 @@
 from datetime import datetime, timezone
 from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field, field_validator
 from google.cloud.firestore_v1.base_query import FieldFilter
+from pydantic import BaseModel, field_validator
+
 from app.database.firebase import get_firestore_client
 from app.dependencies.auth import get_current_user
 from app.services.task_status_service import recalculate_task_status
@@ -396,9 +398,6 @@ def get_submissions(
     current_user: dict = Depends(get_current_user)
 ):
     db = get_db()
-
-    user_id = get_user_id(current_user)
-    role = get_user_role(current_user)
 
     submissions = []
 

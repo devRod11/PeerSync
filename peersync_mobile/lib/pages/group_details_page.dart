@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+
+import '../core/utils/error_messages.dart';
 import '../models/group.dart';
 import '../services/api_service.dart';
+import '../theme/app_colors.dart';
+import '../widgets/shared_widgets.dart';
 
 class GroupDetailsPage extends StatefulWidget {
   final String groupId;
@@ -48,7 +52,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
       if (!mounted) return;
 
       setState(() {
-        errorMessage = e.toString();
+        errorMessage = friendlyErrorMessage(e);
         isLoading = false;
       });
     }
@@ -154,19 +158,19 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                             // Check again after the asynchronous refresh.
                             if (!mounted) return;
 
-                            ScaffoldMessenger.of(context).showSnackBar(
+                            ScaffoldMessenger.of(this.context).showSnackBar(
                               const SnackBar(
                                 content: Text('Group members added successfully.'),
-                                backgroundColor: Colors.green,
+                                backgroundColor: AppColors.success,
                               ),
                             );
                           } catch (e) {
                             if (!mounted) return;
 
-                            ScaffoldMessenger.of(context).showSnackBar(
+                            ScaffoldMessenger.of(this.context).showSnackBar(
                               SnackBar(
-                                content: Text('Failed to add members: $e'),
-                                backgroundColor: Colors.red,
+                                content: Text('Failed to add members: ${friendlyErrorMessage(e)}'),
+                                backgroundColor: AppColors.danger,
                               ),
                             );
                           }
@@ -184,8 +188,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Unable to load available students: $e'),
-          backgroundColor: Colors.red,
+          content: Text('Unable to load available students: ${friendlyErrorMessage(e)}'),
+          backgroundColor: AppColors.danger,
         ),
       );
     }
@@ -210,7 +214,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
+                backgroundColor: AppColors.danger,
                 foregroundColor: Colors.white,
               ),
               onPressed: () {
@@ -242,7 +246,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
           content: Text(
             '${member.displayName} was removed from the group.',
           ),
-          backgroundColor: Colors.green,
+          backgroundColor: AppColors.success,
         ),
       );
     } catch (e) {
@@ -250,8 +254,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to remove group member: $e'),
-          backgroundColor: Colors.red,
+          content: Text('Failed to remove group member: ${friendlyErrorMessage(e)}'),
+          backgroundColor: AppColors.danger,
         ),
       );
     }
@@ -368,7 +372,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Group leader updated successfully.'),
-          backgroundColor: Colors.green,
+          backgroundColor: AppColors.success,
         ),
       );
     } catch (e) {
@@ -376,8 +380,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to assign group leader: $e'),
-          backgroundColor: Colors.red,
+          content: Text('Failed to assign group leader: ${friendlyErrorMessage(e)}'),
+          backgroundColor: AppColors.danger,
         ),
       );
     }
@@ -418,7 +422,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Group renamed successfully.'),
-          backgroundColor: Colors.green,
+          backgroundColor: AppColors.success,
         ),
       );
     } catch (e) {
@@ -426,8 +430,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to rename group: $e'),
-          backgroundColor: Colors.red,
+          content: Text('Failed to rename group: ${friendlyErrorMessage(e)}'),
+          backgroundColor: AppColors.danger,
         ),
       );
     }
@@ -443,9 +447,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         foregroundColor: Colors.white,
       ),
       body: isLoading
-          ? const Center(
-              child: CircularProgressIndicator(),
-            )
+          ? const LoadingView(message: 'Loading group details\u2026')
           : errorMessage != null
               ? _buildError()
               : group == null
@@ -465,7 +467,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
           children: [
             const Icon(
               Icons.error_outline,
-              color: Colors.red,
+              color: AppColors.danger,
               size: 48,
             ),
             const SizedBox(height: 12),
@@ -618,7 +620,7 @@ const SizedBox(height: 12),
                     leading: CircleAvatar(
                       backgroundColor: isLeader
                           ? primaryColor
-                          : Colors.blueGrey,
+                          : AppColors.textSecondary,
                       child: Text(
                         member.displayName.isNotEmpty
                             ? member.displayName[0].toUpperCase()
@@ -645,19 +647,19 @@ const SizedBox(height: 12),
                         if (isLeader)
                           const Icon(
                             Icons.workspace_premium,
-                            color: Colors.amber,
+                            color: AppColors.warning,
                           )
                         else
                           const Icon(
                             Icons.person_outline,
-                            color: Colors.grey,
+                            color: AppColors.textMuted,
                           ),
                         const SizedBox(width: 8),
                         IconButton(
                           tooltip: 'Remove member',
                           icon: const Icon(
                             Icons.person_remove,
-                            color: Colors.red,
+                            color: AppColors.danger,
                           ),
                           onPressed: () => _removeGroupMember(member),
                         ),
@@ -722,7 +724,7 @@ const SizedBox(height: 12),
             child: Text(
               label,
               style: const TextStyle(
-                color: Colors.grey,
+                color: AppColors.textMuted,
               ),
             ),
           ),

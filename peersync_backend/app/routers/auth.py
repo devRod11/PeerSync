@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends
-from app.dependencies.auth import (get_current_user, require_professor, require_student)
+
+from app.dependencies.auth import get_current_user, require_professor, require_student
 
 router = APIRouter(
     prefix="/auth",

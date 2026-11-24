@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+
+import '../core/utils/error_messages.dart';
 import '../models/authenticated_user.dart';
 import '../services/api_service.dart';
+import '../theme/app_colors.dart';
 
 class AuthenticatedProfileLoader extends StatefulWidget {
   final Widget Function(AuthenticatedUser user) builder;
@@ -53,7 +56,7 @@ class _AuthenticatedProfileLoaderState
                     const Icon(
                       Icons.error_outline,
                       size: 48,
-                      color: Colors.red,
+                      color: AppColors.danger,
                     ),
                     const SizedBox(height: 12),
                     const Text(
@@ -62,7 +65,7 @@ class _AuthenticatedProfileLoaderState
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      snapshot.error.toString(),
+                      friendlyErrorMessage(snapshot.error!),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 16),

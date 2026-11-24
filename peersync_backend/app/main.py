@@ -1,12 +1,39 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
-from app.database.firebase import initialize_firebase, get_firestore_client
+import logging
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import auth, projects, groups, milestones, tasks, submissions, announcements, notifications
+
+from app.core.config import settings
+from app.database.firebase import get_firestore_client, initialize_firebase
+from app.routers import (
+    announcements,
+    auth,
+    groups,
+    milestones,
+    notifications,
+    projects,
+    submissions,
+    tasks,
+)
+
+logger = logging.getLogger("peersync")
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Initialise shared resources once, before the app starts serving."""
+    initialize_firebase()
+    logger.info("PeerSync API started.")
+    yield
+    logger.info("PeerSync API stopped.")
+
 
 app = FastAPI(
     title="PeerSync API",
     description="Backend API for PeerSync Mobile Application",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan,
 )
 
 app.include_router(auth.router)
@@ -18,51 +45,26 @@ app.include_router(submissions.router)
 app.include_router(announcements.router)
 app.include_router(notifications.router)
 
-# CORS configuration for development
+# CORS: the allowed origins are configurable through the CORS_ALLOW_ORIGINS
+# environment variable (comma separated). The default keeps the previous
+# permissive behaviour so existing deployments are not broken.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_origin_list,
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-@app.on_event("startup")
-def startup_event():
-    initialize_firebase()
 
 @app.get("/")
 async def root():
-    return {
-        "message": "Welcome to PeerSync API",
-        "status": "Running"
-    }
+    return {"message": "Welcome to PeerSync API", "status": "Running"}
 
 
 @app.get("/health")
 async def health_check():
-    return {
-        "status": "healthy",
-        "application": "PeerSync"
-    }
-
-
-# Temporary WebSocket echo endpoint for testing
-@app.websocket("/ws/notifications")
-async def notification_websocket(websocket: WebSocket):
-    await websocket.accept()
-
-    try:
-        while True:
-            message = await websocket.receive_text()
-
-            await websocket.send_json({
-                "type": "test",
-                "message": message
-            })
-
-    except WebSocketDisconnect:
-        print("WebSocket client disconnected.")
+    return {"status": "healthy", "application": "PeerSync"}
 
 
 @app.get("/health/firebase")
@@ -77,13 +79,14 @@ async def firebase_health_check():
             "status": "connected",
             "application": "PeerSync",
             "database": "Cloud Firestore",
-            "project": "peersync-11326"
+            "project": settings.firebase_project_id,
         }
 
-    except Exception as error:
-        print(f"Firebase connection error: {error}")
+    except Exception:
+        # Log the full stack trace server-side, but never leak it to clients.
+        logger.exception("Firebase connectivity check failed.")
 
         raise HTTPException(
             status_code=503,
-            detail="Firebase connection failed."
-        )
+            detail="Firebase connection failed.",
+        ) from None

@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+
+import '../core/a11y/app_a11y.dart';
 import '../models/authenticated_user.dart';
-import '../models/project.dart';
 import '../models/group.dart';
-import '../models/task.dart';
 import '../models/milestone.dart';
+import '../models/project.dart';
 import '../models/submission.dart';
+import '../models/task.dart';
 import '../services/api_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/shared_widgets.dart';
@@ -66,50 +68,10 @@ class _ProfessorDashboardState extends State<ProfessorDashboard> {
     return name;
   }
 
-  String _formatDate(DateTime date) {
-    const months = [
-      'January',
-      'February',
-      'March',
-      'April',
-      'May',
-      'June',
-      'July',
-      'August',
-      'September',
-      'October',
-      'November',
-      'December',
-    ];
+  String _formatDate(DateTime date) => AppA11y.formatDate(date);
 
-    return '${months[date.month - 1]} ${date.day}, ${date.year}';
-  }
-
-  String _formatRelativeDate(DateTime? date) {
-    if (date == null) return 'Date unavailable';
-
-    final difference = DateTime.now().difference(date);
-
-    if (difference.inMinutes < 1 && !difference.isNegative) {
-      return 'Just now';
-    }
-
-    if (difference.inMinutes < 60 && !difference.isNegative) {
-      return '${difference.inMinutes} minutes ago';
-    }
-
-    if (difference.inHours < 24 && !difference.isNegative) {
-      return '${difference.inHours} hours ago';
-    }
-
-    if (difference.inDays == 1) return 'Yesterday';
-
-    if (difference.inDays > 1) {
-      return '${difference.inDays} days ago';
-    }
-
-    return _formatDate(date);
-  }
+  String _formatRelativeDate(DateTime? date) =>
+      AppA11y.relativeTime(date);
 
   String _initials(String name) {
     final parts = name.trim().split(RegExp(r'\s+'));
@@ -130,15 +92,8 @@ class _ProfessorDashboardState extends State<ProfessorDashboard> {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const PageBody(
             children: [
-              SizedBox(height: 180),
-              Center(child: CircularProgressIndicator()),
-              SizedBox(height: 12),
-              Center(
-                child: Text(
-                  'Loading your dashboard...',
-                  style: subStyle,
-                ),
-              ),
+              SizedBox(height: 120),
+              LoadingView(message: 'Loading your dashboard\u2026'),
             ],
           );
         }
@@ -157,7 +112,7 @@ class _ProfessorDashboardState extends State<ProfessorDashboard> {
                     const Icon(
                       Icons.cloud_off_outlined,
                       size: 38,
-                      color: Colors.redAccent,
+                      color: AppColors.danger,
                     ),
                     const SizedBox(height: 10),
                     const Text(
@@ -318,7 +273,7 @@ class _ProfessorDashboardState extends State<ProfessorDashboard> {
               ],
             ),
 
-            SectionHeading(
+            const SectionHeading(
               'Managed projects',
               action: 'See all',
             ),
@@ -372,7 +327,7 @@ class _ProfessorDashboardState extends State<ProfessorDashboard> {
                 );
               }),
 
-            SectionHeading(
+            const SectionHeading(
               'Needs attention',
               action: 'Review all',
             ),
@@ -382,7 +337,7 @@ class _ProfessorDashboardState extends State<ProfessorDashboard> {
                 child: ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: CircleAvatar(
-                    backgroundColor: Colors.green,
+                    backgroundColor: AppColors.success,
                     child: Icon(
                       Icons.check,
                       color: Colors.white,
@@ -431,7 +386,7 @@ class _ProfessorDashboardState extends State<ProfessorDashboard> {
                 ),
               ),
 
-            SectionHeading(
+            const SectionHeading(
               'Recent submissions',
               action: 'View progress',
             ),
@@ -463,7 +418,7 @@ class _ProfessorDashboardState extends State<ProfessorDashboard> {
                 );
               }),
 
-            SectionHeading('Upcoming deadlines'),
+            const SectionHeading('Upcoming deadlines'),
 
             if (upcomingDeadlines.isEmpty)
               const InfoCard(

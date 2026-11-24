@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
+
+import '../core/a11y/app_a11y.dart';
+import '../core/a11y/status_presentation.dart';
+import '../core/utils/error_messages.dart';
 import '../models/group.dart';
 import '../models/project.dart';
-import '../models/task.dart';
 import '../models/submission.dart';
+import '../models/task.dart';
 import '../services/api_service.dart';
+import '../theme/app_colors.dart';
 import '../widgets/shared_widgets.dart';
 
 class ProgressMonitoring extends StatefulWidget {
@@ -83,7 +88,7 @@ class _ProgressMonitoringState extends State<ProgressMonitoring> {
       if (!mounted) return;
 
       setState(() {
-        _submissionError = error.toString();
+        _submissionError = friendlyErrorMessage(error);
         _isLoadingSubmissions = false;
       });
     }
@@ -122,20 +127,12 @@ class _ProgressMonitoringState extends State<ProgressMonitoring> {
     return null;
   }
 
-  String _formatSubmissionDate(DateTime? date) {
-    if (date == null) return 'Date unavailable';
-
-    return '${date.day}/${date.month}/${date.year}';
-  }
+  String _formatSubmissionDate(DateTime? date) =>
+      AppA11y.formatDate(date);
 
   Widget _buildSubmissionQueue() {
     if (_isLoadingSubmissions) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(20),
-          child: CircularProgressIndicator(),
-        ),
-      );
+      return const LoadingView(message: 'Loading submissions\u2026');
     }
 
     if (_submissionError != null) {
@@ -206,12 +203,8 @@ class _ProgressMonitoringState extends State<ProgressMonitoring> {
                       ],
                     ),
                   ),
-                  BadgeX(
-                    status == 'revision_required'
-                        ? 'REVISION REQUIRED'
-                        : status.toUpperCase(),
-                    dark: status == 'approved',
-                    danger: status == 'revision_required',
+                  StatusChip(
+                    presentation: StatusPresentation.forSubmission(status),
                   ),
                 ],
               ),
@@ -268,22 +261,13 @@ class _ProgressMonitoringState extends State<ProgressMonitoring> {
 
               if (status == 'pending') ...[
                 const SizedBox(height: 14),
-                Row(
-                  children: [
-                    Expanded(
-                      child: PrimaryButton(
-                        label: 'Approve',
-                        onPressed: () => _reviewSubmission(submission),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: OutlineButtonX(
-                        label: 'Review / Request Revision',
-                        onPressed: () => _reviewSubmission(submission),
-                      ),
-                    ),
-                  ],
+                // One full-width action. The previous layout split the row in
+                // two, which forced "Review / Request Revision" to wrap and
+                // clip inside a fixed-height button - and both halves opened
+                // the same dialog anyway.
+                PrimaryButton(
+                  label: 'Review submission',
+                  onPressed: () => _reviewSubmission(submission),
                 ),
               ],
             ],
@@ -334,13 +318,6 @@ class _ProgressMonitoringState extends State<ProgressMonitoring> {
 
 
   @override Widget build(BuildContext context) => PageBody(children: [
-    /*
-    const ScreenHeading(eyebrow: 'CAPSTONE PROJECT 1', title: 'Progress monitor', detail: 'Track individual and group milestones.'),
-    const SearchField(hint: 'Search student or group'),
-    const SizedBox(height: 9),
-    const Wrap(spacing: 6, children: [BadgeX('IT 401⌄'), BadgeX('All status⌄'), BadgeX('Due date⌄')]),
-    const SizedBox(height: 10),
-    ChoiceChipsX(values: const ['Students','Groups'], selected: tab, onSelect: (v) => setState(() => tab = v)), */
     const ScreenHeading(eyebrow: 'Progress Monitoring', title: 'Student Submissions', detail:'Track individual and group milestones.'),
       Row(
         children: [
@@ -375,7 +352,7 @@ class _ProgressMonitoringState extends State<ProgressMonitoring> {
     const InfoCard(child: ListTile(contentPadding: EdgeInsets.zero, title: Text('“We completed the user interview guide…”', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)), subtitle: Text('Updated today, 9:42 AM · 1 attachment', style: subStyle), trailing: Icon(Icons.attach_file))),
     const FieldLabel('Professor feedback'),
     const TextField(maxLines: 3, decoration: InputDecoration(hintText: 'Add comments or recommendations…')),
-    Row(children: [Expanded(child: PrimaryButton(label: 'Mark reviewed', onPressed: () {})), const SizedBox(width: 8), Expanded(child: OutlineButtonX(label: 'Request revision', onPressed: () {}))]), */
+    // Review actions live in the submission review sheet. */
   ]); 
 }
 
@@ -455,7 +432,7 @@ class _SubmissionReviewDialogState
               Text(
                 _errorMessage!,
                 style: const TextStyle(
-                  color: Colors.red,
+                  color: AppColors.danger,
                   fontSize: 12,
                 ),
               ),
