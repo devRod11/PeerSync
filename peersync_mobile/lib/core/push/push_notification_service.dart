@@ -207,6 +207,9 @@ class PushNotificationService {
   }
 
   static void _handleForegroundMessage(RemoteMessage message) {
+    debugPrint('PeerSync: FOREGROUND FCM RECEIVED');
+    debugPrint('PeerSync: Message ID: ${message.messageId}');
+    debugPrint('PeerSync: Data: ${message.data}');
     final push = _toPushMessage(message);
 
     if (push != null) {
@@ -247,6 +250,7 @@ class PushNotificationService {
       _ => 'notifications',
     };
   }
+
 static Future<void> unregister({String? role}) async {
   try {
     final currentToken = _token;
