@@ -1,6 +1,41 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
+from google.api_core.exceptions import AlreadyExists
 from google.cloud.firestore_v1.base_query import FieldFilter
+
+
+EMAIL_DIGEST_COLLECTION = "email_digests"
+EMAIL_DIGEST_INTERVAL_HOURS = 72
+
+
+def _ensure_email_digest_cycle(db, recipient_id: str, now: datetime):
+    """
+    Start a recipient's 72-hour digest window if one is not active.
+    Existing tracking documents are preserved.
+    """
+
+    if not recipient_id:
+        return
+
+    digest_ref = (
+        db.collection(EMAIL_DIGEST_COLLECTION)
+        .document(recipient_id)
+    )
+
+    try:
+        digest_ref.create({
+            "recipientUID": recipient_id,
+            "periodStartedAt": now,
+            "nextDigestAt": now + timedelta(
+                hours=EMAIL_DIGEST_INTERVAL_HOURS
+            ),
+            "status": "collecting",
+            "createdAt": now,
+            "updatedAt": now
+        })
+    except AlreadyExists:
+        # An active 72-hour collection period already exists.
+        return
 
 
 def create_task_assignment_notifications(
@@ -11,6 +46,7 @@ def create_task_assignment_notifications(
 ):
     """
     Create one notification for each newly assigned student.
+    Start a digest cycle for each recipient.
     """
 
     if not assigned_to:
@@ -21,8 +57,9 @@ def create_task_assignment_notifications(
 
     now = datetime.now(timezone.utc)
     created_count = 0
+    recipient_ids = set(assigned_to)
 
-    for recipient_id in set(assigned_to):
+    for recipient_id in recipient_ids:
         if not recipient_id:
             continue
 
@@ -47,7 +84,11 @@ def create_task_assignment_notifications(
     if created_count:
         batch.commit()
 
+        for recipient_id in recipient_ids:
+            _ensure_email_digest_cycle(db, recipient_id, now)
+
     return created_count
+
 
 def _get_announcement_recipient_ids(
     db,
@@ -106,7 +147,7 @@ def _commit_notification_operations(db, operations):
     """
     Commit notification writes/deletes in batches of
     no more than 450 operations.
-    
+
     Each operation is:
         ("set", document_reference, data)
         ("update", document_reference, data)
@@ -147,6 +188,7 @@ def create_announcement_notifications(
     """
     Create one notification for every student eligible
     to view the newly published announcement.
+    Start a digest cycle for each recipient.
     """
 
     recipient_ids = _get_announcement_recipient_ids(
@@ -182,6 +224,9 @@ def create_announcement_notifications(
         )
 
     _commit_notification_operations(db, operations)
+
+    for recipient_id in recipient_ids:
+        _ensure_email_digest_cycle(db, recipient_id, now)
 
     return len(operations)
 
@@ -232,7 +277,6 @@ def sync_announcement_notifications(
         if not recipient_id:
             continue
 
-        # Store the existing notification document
         existing_by_recipient[recipient_id] = doc
 
     now = datetime.now(timezone.utc)
@@ -240,14 +284,11 @@ def sync_announcement_notifications(
     for recipient_id, doc in existing_by_recipient.items():
 
         if recipient_id not in current_recipients:
-            # The student is no longer eligible.
             operations.append(
                 ("delete", doc.reference, None)
             )
 
         else:
-            # Student remains eligible.
-            # Updating these fields preserves isRead and createdAt.
             operations.append(
                 (
                     "update",
@@ -265,11 +306,14 @@ def sync_announcement_notifications(
                 )
             )
 
+    newly_eligible_recipients = set()
+
     for recipient_id in current_recipients:
         if recipient_id in existing_by_recipient:
             continue
 
-        # Newly eligible student.
+        newly_eligible_recipients.add(recipient_id)
+
         doc_ref = notifications.document()
 
         notification = {
@@ -292,6 +336,9 @@ def sync_announcement_notifications(
         )
 
     _commit_notification_operations(db, operations)
+
+    for recipient_id in newly_eligible_recipients:
+        _ensure_email_digest_cycle(db, recipient_id, now)
 
     return {
         "eligibleRecipients": len(current_recipients),

@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     professor_otp_expire_minutes: int = 5
     professor_otp_max_attempts: int = 5
 
+    email_digest_cron_secret: str | None = None
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [
