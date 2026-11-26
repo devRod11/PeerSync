@@ -37,6 +37,7 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
   List<Task> _tasks = [];
   final Map<String, List<Milestone>> _milestonesByGroup = {};
   final Map<String, List<Submission>> _submissionsByTask = {};
+  final Set<String> _deletingSubmissionIDs = {};
 
   bool get _isProfessor =>
       widget.user.role.trim().toLowerCase() == 'professor';
@@ -260,6 +261,66 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
   }
 }
 
+Future<void> _deleteSubmission(Submission submission) async {
+    // Only pending submissions can be deleted by students.
+    if (submission.status.trim().toLowerCase() != 'pending') {
+      return;
+    }
+
+    if (_deletingSubmissionIDs.contains(submission.id)) {
+      return;
+    }
+
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Delete submission?',
+      message: 'Are you sure you want to delete '
+          '"${submission.fileName}"? '
+          'This will permanently delete the uploaded file '
+          'and its submission record.',
+    );
+
+    if (!confirmed || !mounted) return;
+
+    setState(() {
+      _deletingSubmissionIDs.add(submission.id);
+    });
+
+    try {
+      await ApiService.deleteSubmission(submission.id);
+
+      if (!mounted) return;
+
+      // Refresh submissions and task status only after the backend
+      // confirms that the deletion workflow completed successfully.
+      await _loadActivities();
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Submission deleted successfully.'),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Unable to delete submission: ${friendlyErrorMessage(error)}',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _deletingSubmissionIDs.remove(submission.id);
+        });
+      }
+    }
+  }
+
   Future<void> _openTaskForm({Task? existingTask}) async {
   final editableGroups = _isProfessor
       ? _groups
@@ -428,6 +489,34 @@ Widget _buildSubmissionDetails(Task task) {
           Text(
             submission.feedback!,
             style: subStyle,
+          ),
+        ],
+        if (submission.status.trim().toLowerCase() == 'pending') ...[
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _deletingSubmissionIDs.contains(submission.id)
+                  ? null
+                  : () => _deleteSubmission(submission),
+              icon: _deletingSubmissionIDs.contains(submission.id)
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                      ),
+                    )
+                  : const Icon(Icons.delete_outline),
+              label: Text(
+                _deletingSubmissionIDs.contains(submission.id)
+                    ? 'Deleting submission...'
+                    : 'Delete submission',
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Theme.of(context).colorScheme.error,
+              ),
+            ),
           ),
         ],
       ],

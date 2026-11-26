@@ -7,6 +7,7 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
+from googleapiclient.errors import HttpError
 from google_auth_oauthlib.flow import Flow
 
 from app.core.config import settings
@@ -453,7 +454,11 @@ def download_drive_file(file_id):
 
 
 def delete_drive_file(file_id):
-    """Permanently delete a file from Google Drive."""
+    """Permanently delete a file from Google Drive.
+
+    Treat an already-missing file as successfully deleted.
+    This makes cleanup safe to retry.
+    """
 
     try:
         service = get_google_drive_service()
@@ -463,6 +468,15 @@ def delete_drive_file(file_id):
         ).execute()
 
         return True
+
+    except HttpError as exc:
+        # Google Drive returns 404 if the file is already missing.
+        if exc.resp.status == 404:
+            return True
+
+        raise GoogleDriveOAuthError(
+            "Unable to delete the Google Drive file."
+        ) from None
 
     except Exception:
         raise GoogleDriveOAuthError(

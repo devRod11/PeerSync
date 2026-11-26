@@ -834,36 +834,73 @@ def delete_submission(
     user_id = get_user_id(current_user)
     role = get_user_role(current_user)
 
+    # Only students can delete submissions.
     if role != "student":
         raise HTTPException(
             status_code=403,
             detail="Only the submitting student can delete a submission."
         )
 
+    # Retrieve the submission.
     doc_ref, submission = get_submission_or_404(
         db,
         submission_id
     )
 
+    # Verify submission ownership.
     if submission.get("submittedBy") != user_id:
         raise HTTPException(
             status_code=403,
             detail="You can only delete your own submissions."
         )
 
+    # Only pending submissions can be deleted.
     if submission.get("status") != "pending":
         raise HTTPException(
             status_code=400,
             detail="Only pending submissions can be deleted."
         )
 
-    doc_ref.delete()
+    # Retrieve the Drive file ID from trusted Firestore metadata.
+    drive_file_id = submission.get("driveFileId")
+
+    # Delete the actual Google Drive file first.
+    # If this fails, preserve the Firestore document for retry.
+    if drive_file_id:
+        try:
+            delete_drive_file(drive_file_id)
+
+        except GoogleDriveOAuthError:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Unable to delete the file from Google Drive. "
+                    "The submission record was preserved. "
+                    "Please try again."
+                )
+            ) from None
+
+    # Delete the Firestore submission metadata.
+    try:
+        doc_ref.delete()
+
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "The Google Drive file was deleted, but the "
+                "submission record could not be removed. "
+                "Please retry the deletion."
+            )
+        ) from None
+
+    # Recalculate the associated task status.
     recalculate_task_status(
         db,
         submission["taskID"]
     )
 
     return {
-        "message": "Submission deleted successfully.",
+        "message": "Submission and uploaded file deleted successfully.",
         "submissionID": submission_id
     }
