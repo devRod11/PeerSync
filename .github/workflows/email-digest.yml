@@ -1,0 +1,21 @@
+name: PeerSync Email Digest
+
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch:
+
+jobs:
+  process-email-digests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Process due email digests
+        env:
+          PEERSYNC_API_URL: ${{ secrets.PEERSYNC_API_URL }}
+          EMAIL_DIGEST_CRON_SECRET: ${{ secrets.EMAIL_DIGEST_CRON_SECRET }}
+        run: |
+          curl --fail --silent --show-error \
+            --request POST \
+            "${PEERSYNC_API_URL}/internal/email-digests/process" \
+            --header "X-Email-Digest-Secret: ${EMAIL_DIGEST_CRON_SECRET}"
