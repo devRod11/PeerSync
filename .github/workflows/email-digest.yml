@@ -15,7 +15,7 @@ jobs:
           PEERSYNC_API_URL: ${{ secrets.PEERSYNC_API_URL }}
           EMAIL_DIGEST_CRON_SECRET: ${{ secrets.EMAIL_DIGEST_CRON_SECRET }}
         run: |
-                    python -c "from urllib.parse import urlparse; import os; u=urlparse(os.environ['PEERSYNC_API_URL']); print('Scheme:', u.scheme); print('Host:', u.netloc); print('Base path:', repr(u.path))"
+          python -c "from urllib.parse import urlparse; import os; u=urlparse(os.environ['PEERSYNC_API_URL']); print('Scheme:', u.scheme); print('Host:', u.netloc); print('Base path:', repr(u.path))"
           curl --fail --silent --show-error \
             --request POST \
             "${PEERSYNC_API_URL}/internal/email-digests/process" \
