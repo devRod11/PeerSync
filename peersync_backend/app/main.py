@@ -15,7 +15,9 @@ from app.routers import (
     projects,
     submissions,
     tasks,
+    google_drive
 )
+
 
 logger = logging.getLogger("peersync")
 
@@ -44,6 +46,7 @@ app.include_router(tasks.router)
 app.include_router(submissions.router)
 app.include_router(announcements.router)
 app.include_router(notifications.router)
+app.include_router(google_drive.router)
 
 # CORS: the allowed origins are configurable through the CORS_ALLOW_ORIGINS
 # environment variable (comma separated). The default keeps the previous

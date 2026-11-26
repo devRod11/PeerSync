@@ -1,8 +1,6 @@
 from pathlib import Path
-
 import firebase_admin
 from firebase_admin import credentials, firestore
-
 from app.core.config import BACKEND_ROOT, settings
 
 _firebase_app = None

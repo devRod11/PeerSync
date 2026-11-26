@@ -374,9 +374,6 @@ def create_submission(
     doc_ref = db.collection("submissions").document()
     doc_ref.set(submission)
 
-    doc_ref = db.collection("submissions").document()
-    doc_ref.set(submission)
-
     recalculate_task_status(
         db,
         submission_data.taskID

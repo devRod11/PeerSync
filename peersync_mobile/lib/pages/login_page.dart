@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/a11y/app_a11y.dart';
@@ -29,6 +30,37 @@ class _LoginPageState extends State<LoginPage> {
   bool remember = true;
   bool showPassword = false;
   bool isLoading = false;
+
+
+Future<void> _printProfessorIdToken() async {
+  final user = FirebaseAuth.instance.currentUser;
+
+  if (user == null) {
+    debugPrint('No authenticated user found.');
+    return;
+  }
+
+  final idToken = await user.getIdToken(true);
+
+  if (idToken == null || idToken.isEmpty) {
+    debugPrint('Firebase ID token is empty.');
+    return;
+  }
+
+  final parts = idToken.split('.');
+
+  debugPrint('Professor Firebase ID Token retrieved.');
+  debugPrint('Token length: ${idToken.length}');
+  debugPrint('JWT sections: ${parts.length}');
+  debugPrint('Token complete: ${parts.length == 3}');
+
+  await Clipboard.setData(
+    ClipboardData(text: idToken),
+  );
+
+  debugPrint('Firebase ID token copied to clipboard.');
+}
+
 
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
@@ -151,6 +183,10 @@ class _LoginPageState extends State<LoginPage> {
       // Both valid roles can proceed after Firebase and Firestore validation.
       final authenticatedRole =
           accountRole == 'professor' ? 'Professor' : 'Student';
+      
+      if (accountRole == 'professor') {
+        await _printProfessorIdToken();
+      }
 
       loginSucceeded = true;
       widget.onLogin(authenticatedRole);
@@ -207,6 +243,7 @@ class _LoginPageState extends State<LoginPage> {
       }
     }
   }
+  
 
   @override
   Widget build(BuildContext context) {
