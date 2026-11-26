@@ -6,6 +6,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload
 from google_auth_oauthlib.flow import Flow
 
 from app.core.config import settings
@@ -369,3 +370,101 @@ def get_google_drive_status():
         "connected": token_doc.exists,
         "provider": "google_drive",
     }
+
+def upload_drive_file(file_stream, file_name, mime_type):
+    """Upload a file to the designated Google Drive account."""
+
+    try:
+        service = get_google_drive_service()
+
+        file_metadata = {
+            "name": file_name,
+        }
+
+        # Use the configured folder when available.
+        if settings.google_drive_folder_id:
+            file_metadata["parents"] = [
+                settings.google_drive_folder_id
+            ]
+
+        media = MediaIoBaseUpload(
+            file_stream,
+            mimetype=mime_type,
+            resumable=True,
+        )
+
+        uploaded_file = (
+            service.files()
+            .create(
+                body=file_metadata,
+                media_body=media,
+                fields="id,name,mimeType,size",
+            )
+            .execute()
+        )
+
+        return {
+            "driveFileId": uploaded_file["id"],
+            "fileName": uploaded_file["name"],
+            "mimeType": uploaded_file.get("mimeType"),
+            "size": uploaded_file.get("size"),
+        }
+
+    except Exception:
+        raise GoogleDriveOAuthError(
+            "Unable to upload the file to Google Drive."
+        ) from None
+
+
+def download_drive_file(file_id):
+    """Download a private Google Drive file."""
+
+    try:
+        service = get_google_drive_service()
+
+        metadata = (
+            service.files()
+            .get(
+                fileId=file_id,
+                fields="name,mimeType",
+            )
+            .execute()
+        )
+
+        content = (
+            service.files()
+            .get_media(fileId=file_id)
+            .execute()
+        )
+
+        return {
+            "fileName": metadata["name"],
+            "mimeType": metadata.get(
+                "mimeType",
+                "application/octet-stream",
+            ),
+            "content": content,
+        }
+
+    except Exception:
+        raise GoogleDriveOAuthError(
+            "Unable to retrieve the Google Drive file."
+        ) from None
+
+
+def delete_drive_file(file_id):
+    """Permanently delete a file from Google Drive."""
+
+    try:
+        service = get_google_drive_service()
+
+        service.files().delete(
+            fileId=file_id,
+        ).execute()
+
+        return True
+
+    except Exception:
+        raise GoogleDriveOAuthError(
+            "Unable to delete the Google Drive file."
+        ) from None

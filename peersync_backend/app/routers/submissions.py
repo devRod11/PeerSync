@@ -1,17 +1,38 @@
 from datetime import datetime, timezone
 from typing import Optional
+import io
+import os
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import File, Form, UploadFile
 from google.cloud.firestore_v1.base_query import FieldFilter
 from pydantic import BaseModel, field_validator
 
 from app.database.firebase import get_firestore_client
 from app.dependencies.auth import get_current_user
 from app.services.task_status_service import recalculate_task_status
+from app.integrations.google_drive import (
+    GoogleDriveOAuthError,
+    upload_drive_file,
+    delete_drive_file,
+)
 
 router = APIRouter(prefix="/submissions", tags=["Submissions"])
 
 VALID_REVIEW_STATUSES = ["approved", "revision_required"]
+MAX_UPLOAD_SIZE = 25 * 1024 * 1024  # 25 MB
+ALLOWED_FILE_TYPES = {
+    ".pdf": "application/pdf",
+    ".doc": "application/msword",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".ppt": "application/vnd.ms-powerpoint",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".xls": "application/vnd.ms-excel",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".txt": "text/plain",
+    ".csv": "text/csv",
+    ".zip": "application/zip",
+}
 
 class SubmissionCreate(BaseModel):
     projectID: str
@@ -385,6 +406,201 @@ def create_submission(
             doc_ref.id,
             submission
         )
+    }
+
+@router.post("/upload", status_code=201)
+async def upload_submission(
+    projectID: str = Form(...),
+    groupID: str = Form(...),
+    taskID: str = Form(...),
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
+):
+    db = get_db()
+
+    user_id = get_user_id(current_user)
+    role = get_user_role(current_user)
+
+    # Only students can upload deliverables.
+    if role != "student":
+        raise HTTPException(
+            status_code=403,
+            detail="Only students can submit deliverables."
+        )
+
+    # Validate the filename.
+    original_name = file.filename or ""
+    file_name = os.path.basename(
+        original_name.replace("\\", "/")
+    ).strip()
+
+    if not file_name:
+        raise HTTPException(
+            status_code=400,
+            detail="A valid filename is required."
+        )
+
+    extension = os.path.splitext(file_name)[1].lower()
+
+    if extension not in ALLOWED_FILE_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail="This file type is not supported."
+        )
+
+    mime_type = ALLOWED_FILE_TYPES[extension]
+
+    # Read the uploaded file with a strict size limit.
+    file_content = await file.read(MAX_UPLOAD_SIZE + 1)
+
+    if not file_content:
+        raise HTTPException(
+            status_code=400,
+            detail="The uploaded file is empty."
+        )
+
+    if len(file_content) > MAX_UPLOAD_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail="File size exceeds the 25 MB limit."
+        )
+
+    # Validate project.
+    get_project_or_404(db, projectID)
+
+    # Validate group and project relationship.
+    group = get_group_or_404(db, groupID)
+
+    if group.get("projectID") != projectID:
+        raise HTTPException(
+            status_code=400,
+            detail="The group does not belong to this project."
+        )
+
+    # Validate student membership.
+    verify_group_membership(
+        db,
+        groupID,
+        user_id
+    )
+
+    # Validate task and its relationships.
+    task = get_task_or_404(db, taskID)
+
+    if (
+        task.get("projectID") != projectID
+        or task.get("groupID") != groupID
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "The task does not belong to "
+                "the specified project and group."
+            )
+        )
+
+    # Only assigned students can submit.
+    assigned_students = task.get("assignedTo", [])
+
+    if user_id not in assigned_students:
+        raise HTTPException(
+            status_code=403,
+            detail="You are not assigned to this task."
+        )
+
+    # Check the student's latest submission.
+    latest_submission = get_latest_student_submission(
+        db,
+        taskID,
+        user_id
+    )
+
+    if latest_submission:
+        latest_status = latest_submission.get("status")
+
+        if latest_status == "pending":
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Your previous submission "
+                    "is still pending review."
+                )
+            )
+
+        if latest_status == "approved":
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "This task has already been approved. "
+                    "No further submission is allowed."
+                )
+            )
+
+        if latest_status != "revision_required":
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid previous submission status."
+            )
+
+    # Upload the actual file to Google Drive.
+    try:
+        uploaded_file = upload_drive_file(
+            io.BytesIO(file_content),
+            file_name,
+            mime_type,
+        )
+
+    except GoogleDriveOAuthError:
+        raise HTTPException(
+            status_code=503,
+            detail="Google Drive upload failed. Please try again."
+        ) from None
+
+    # Save submission metadata in Firestore.
+    now = datetime.now(timezone.utc)
+
+    submission = {
+        "driveFileId": uploaded_file["driveFileId"],
+        "feedback": None,
+        "fileName": uploaded_file["fileName"],
+        "fileType": mime_type,
+        "groupID": groupID,
+        "projectID": projectID,
+        "reviewedAt": None,
+        "reviewedBy": None,
+        "status": "pending",
+        "submittedAt": now,
+        "submittedBy": user_id,
+        "taskID": taskID,
+    }
+
+    doc_ref = db.collection("submissions").document()
+
+    try:
+        doc_ref.set(submission)
+
+    except Exception:
+        # Prevent an orphaned Drive file if Firestore fails.
+        try:
+            delete_drive_file(
+                uploaded_file["driveFileId"]
+            )
+        except GoogleDriveOAuthError:
+            pass
+
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to save submission metadata."
+        ) from None
+
+    recalculate_task_status(db, taskID)
+
+    return {
+        "message": "File uploaded and submission created successfully.",
+        "submission": format_submission(
+            doc_ref.id,
+            submission
+        ),
     }
 
 @router.get("/")

@@ -32,7 +32,7 @@ class _LoginPageState extends State<LoginPage> {
   bool isLoading = false;
 
 
-Future<void> _printProfessorIdToken() async {
+Future<void> _printAuthenticatedIdToken(String role) async {
   final user = FirebaseAuth.instance.currentUser;
 
   if (user == null) {
@@ -49,16 +49,20 @@ Future<void> _printProfessorIdToken() async {
 
   final parts = idToken.split('.');
 
-  debugPrint('Professor Firebase ID Token retrieved.');
+  debugPrint('$role Firebase ID Token retrieved.');
   debugPrint('Token length: ${idToken.length}');
   debugPrint('JWT sections: ${parts.length}');
   debugPrint('Token complete: ${parts.length == 3}');
 
-  await Clipboard.setData(
-    ClipboardData(text: idToken),
-  );
+  try {
+    await Clipboard.setData(
+      ClipboardData(text: idToken),
+    );
 
-  debugPrint('Firebase ID token copied to clipboard.');
+    debugPrint('$role Firebase ID token copied to clipboard.');
+  } on PlatformException catch (e) {
+    debugPrint('Clipboard access failed: ${e.message}');
+  }
 }
 
 
@@ -184,9 +188,7 @@ Future<void> _printProfessorIdToken() async {
       final authenticatedRole =
           accountRole == 'professor' ? 'Professor' : 'Student';
       
-      if (accountRole == 'professor') {
-        await _printProfessorIdToken();
-      }
+      await _printAuthenticatedIdToken(authenticatedRole);
 
       loginSucceeded = true;
       widget.onLogin(authenticatedRole);
