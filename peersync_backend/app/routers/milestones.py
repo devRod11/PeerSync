@@ -1,11 +1,18 @@
+import logging
 from datetime import datetime, timezone
 from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field, field_validator
 from google.cloud.firestore_v1.base_query import FieldFilter
+from pydantic import BaseModel, Field, field_validator
+
 from app.database.firebase import get_firestore_client
 from app.dependencies.auth import (get_current_user, require_professor,)
-
+from app.services.calendar_sync_service import (
+    sync_resource_calendar_events,
+    delete_resource_calendar_events,
+)
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/milestones", tags=["Milestones"])
 
 class MilestoneCreate(BaseModel):
@@ -157,6 +164,70 @@ def format_milestone(doc):
     data["id"] = doc.id
     return data
 
+def get_milestone_student_uids(db, group_ids):
+    """Get unique student UIDs across all groups assigned to a milestone."""
+    student_uids = set()
+
+    for group_id in group_ids:
+        membership_docs = (
+            db.collection("group_members")
+            .where(filter=FieldFilter("groupID", "==", group_id))
+            .stream()
+        )
+
+        for membership_doc in membership_docs:
+            membership = membership_doc.to_dict()
+            student_id = membership.get("studentID")
+
+            if student_id:
+                student_uids.add(student_id)
+
+    return list(student_uids)
+
+
+def sync_milestone_calendar_safely(db, milestone_id, milestone):
+    """Synchronize milestone events without interrupting milestone operations."""
+    try:
+        student_uids = get_milestone_student_uids(
+            db,
+            milestone.get("groupID", []),
+        )
+
+        sync_resource_calendar_events(
+            resource_type="milestone",
+            resource_id=milestone_id,
+            student_uids=student_uids,
+            title=milestone.get("title", "Untitled Milestone"),
+            description=milestone.get("description", ""),
+            due_date=milestone.get("dueDate"),
+            metadata={
+                "Project ID": milestone.get("projectID"),
+                "Sequence": milestone.get("sequence"),
+                "Start Date": milestone.get("startDate"),
+            },
+        )
+
+    except Exception:
+        logger.exception(
+            "Unable to synchronize Google Calendar for milestone %s.",
+            milestone_id,
+        )
+
+
+def delete_milestone_calendar_safely(milestone_id):
+    """Delete milestone events without interrupting milestone deletion."""
+    try:
+        delete_resource_calendar_events(
+            resource_type="milestone",
+            resource_id=milestone_id,
+        )
+
+    except Exception:
+        logger.exception(
+            "Unable to delete Google Calendar events for milestone %s.",
+            milestone_id,
+        )
+
 @router.post("/", status_code=201)
 def create_milestone(
     milestone_data: MilestoneCreate,
@@ -206,6 +277,11 @@ def create_milestone(
 
     doc_ref = db.collection("milestones").document()
     doc_ref.set(milestone)
+    sync_milestone_calendar_safely(
+        db=db,
+        milestone_id=doc_ref.id,
+        milestone=milestone,
+    )
 
     return {
         "message": "Milestone created successfully.",
@@ -384,6 +460,17 @@ def update_milestone(
 
     milestone_ref.update(updates)
 
+    updated_milestone_data = {
+        **existing,
+        **updates,
+    }
+
+    sync_milestone_calendar_safely(
+        db=db,
+        milestone_id=milestone_id,
+        milestone=updated_milestone_data,
+    )
+
     updated_doc = milestone_ref.get()
 
     return {
@@ -416,6 +503,7 @@ def delete_milestone(
     )
 
     milestone_ref.delete()
+    delete_milestone_calendar_safely(milestone_id)
 
     return {
         "message": "Milestone deleted successfully.",

@@ -1,9 +1,10 @@
-import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../services/api_test.dart';
 
+import '../core/a11y/app_a11y.dart';
+import '../core/utils/error_messages.dart';
 import '../theme/app_colors.dart';
 import '../widgets/shared_widgets.dart';
 
@@ -29,8 +30,43 @@ class _LoginPageState extends State<LoginPage> {
   bool showPassword = false;
   bool isLoading = false;
 
+/*
+Future<void> _printAuthenticatedIdToken(String role) async {
+  final user = FirebaseAuth.instance.currentUser;
+
+  if (user == null) {
+    debugPrint('No authenticated user found.');
+    return;
+  }
+
+  final idToken = await user.getIdToken(true);
+
+  if (idToken == null || idToken.isEmpty) {
+    debugPrint('Firebase ID token is empty.');
+    return;
+  }
+
+  final parts = idToken.split('.');
+
+  debugPrint('$role Firebase ID Token retrieved.');
+  debugPrint('Token length: ${idToken.length}');
+  debugPrint('JWT sections: ${parts.length}');
+  debugPrint('Token complete: ${parts.length == 3}');
+
+  try {
+    await Clipboard.setData(
+      ClipboardData(text: idToken),
+    );
+
+    debugPrint('$role Firebase ID token copied to clipboard.');
+  } on PlatformException catch (e) {
+    debugPrint('Clipboard access failed: ${e.message}');
+  }
+}*/
+
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
+  final passwordFocusNode = FocusNode();
 
   String? errorMessage;
   late final Future<void> _rememberPreferenceFuture;
@@ -56,7 +92,15 @@ class _LoginPageState extends State<LoginPage> {
   void dispose() {
     emailController.dispose();
     passwordController.dispose();
+    passwordFocusNode.dispose();
     super.dispose();
+  }
+
+  void _showMessage(String message) {
+    AppA11y.announce(context, message);
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _signIn() async {
@@ -67,6 +111,7 @@ class _LoginPageState extends State<LoginPage> {
       setState(() {
         errorMessage = 'Please enter your email and password.';
       });
+      AppA11y.announce(context, 'Please enter your email and password.');
       return;
     }
 
@@ -87,8 +132,7 @@ class _LoginPageState extends State<LoginPage> {
       await preferences.setBool('peersync_remember_me', remember);
 
       // 1. Authenticate through Firebase Authentication.
-      final credential =
-          await FirebaseAuth.instance.signInWithEmailAndPassword(
+      final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
@@ -98,33 +142,6 @@ class _LoginPageState extends State<LoginPage> {
 
       if (firebaseUser == null) {
         throw Exception('Unable to retrieve authenticated user.');
-      }
-
-      // TEMPORARY: Retrieve Firebase ID token for Swagger testing.
-      debugPrint('TOKEN TEST: Reached token retrieval.');
-
-      try {
-        final idToken = await firebaseUser.getIdToken(true);
-
-        if (idToken == null) {
-          debugPrint('TOKEN ERROR: Firebase returned a null token.');
-        } else {
-          debugPrint('TOKEN TEST: Token retrieved successfully.');
-          debugPrint('TOKEN LENGTH: ${idToken.length}');
-          debugPrint('========== FIREBASE ID TOKEN START ==========');
-
-          for (var i = 0; i < idToken.length; i += 500) {
-            final end = (i + 500 < idToken.length)
-                ? i + 500
-                : idToken.length;
-
-            debugPrint(idToken.substring(i, end));
-          }
-
-          debugPrint('========== FIREBASE ID TOKEN END ==========');
-        }
-      } catch (e) {
-        debugPrint('TOKEN RETRIEVAL ERROR: $e');
       }
 
       // 2. Retrieve the corresponding Firestore user document.
@@ -143,12 +160,15 @@ class _LoginPageState extends State<LoginPage> {
       // 3. Check whether the account is active.
       if (userData['isActive'] != true) {
         await FirebaseAuth.instance.signOut();
-        throw Exception('Your account is inactive. Contact your administrator.');
+        throw Exception(
+          'Your account is inactive. Contact your administrator.',
+        );
       }
 
       // 4. Verify the actual Firestore role.
-      final accountRole =
-          (userData['role'] as String? ?? '').trim().toLowerCase();
+      final accountRole = (userData['role'] as String? ?? '')
+          .trim()
+          .toLowerCase();
 
       final selectedRole = role.toLowerCase();
 
@@ -165,13 +185,14 @@ class _LoginPageState extends State<LoginPage> {
 
       // Professor OTP is intentionally postponed during this development stage.
       // Both valid roles can proceed after Firebase and Firestore validation.
-      final authenticatedRole =
-          accountRole == 'professor' ? 'Professor' : 'Student';
+      final authenticatedRole = accountRole == 'professor'
+          ? 'Professor'
+          : 'Student';
+
+      //await _printAuthenticatedIdToken(authenticatedRole);
 
       loginSucceeded = true;
       widget.onLogin(authenticatedRole);
-      await ApiTest.testConnection();
-
     } on FirebaseAuthException catch (e) {
       if (authenticatedUser != null && !loginSucceeded) {
         try {
@@ -183,29 +204,22 @@ class _LoginPageState extends State<LoginPage> {
 
       if (!mounted) return;
 
+      final message = switch (e.code) {
+        'invalid-email' => 'Please enter a valid email address.',
+        'user-not-found' ||
+        'wrong-password' ||
+        'invalid-credential' => 'Invalid email or password.',
+        'user-disabled' => 'This account has been disabled.',
+        'too-many-requests' => 'Too many attempts. Please try again later.',
+        'network-request-failed' =>
+          'Network error. Check your internet connection.',
+        _ => friendlyErrorMessage(e),
+      };
+
       setState(() {
-        switch (e.code) {
-          case 'invalid-email':
-            errorMessage = 'Please enter a valid email address.';
-            break;
-          case 'user-not-found':
-          case 'wrong-password':
-          case 'invalid-credential':
-            errorMessage = 'Invalid email or password.';
-            break;
-          case 'user-disabled':
-            errorMessage = 'This account has been disabled.';
-            break;
-          case 'too-many-requests':
-            errorMessage = 'Too many attempts. Please try again later.';
-            break;
-          case 'network-request-failed':
-            errorMessage = 'Network error. Check your internet connection.';
-            break;
-          default:
-            errorMessage = 'Authentication failed: ${e.message}';
-        }
+        errorMessage = message;
       });
+      AppA11y.announce(context, message);
     } catch (e) {
       if (authenticatedUser != null && !loginSucceeded) {
         try {
@@ -217,9 +231,11 @@ class _LoginPageState extends State<LoginPage> {
 
       if (!mounted) return;
 
+      final message = friendlyErrorMessage(e);
       setState(() {
-        errorMessage = e.toString().replaceFirst('Exception: ', '');
+        errorMessage = message;
       });
+      AppA11y.announce(context, message);
     } finally {
       if (mounted) {
         setState(() {
@@ -230,198 +246,279 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-  
-
   @override
-  Widget build(BuildContext context) => SingleChildScrollView(
-    padding: const EdgeInsets.fromLTRB(26, 38, 26, 24),
-    child: ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 480),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const SizedBox(height: 24),
+  Widget build(BuildContext context) {
+    final emailLabel = 'Email or ${role.toLowerCase()} ID';
 
-          Column(children: [
-            Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                color: ink,
-                borderRadius: BorderRadius.circular(13),
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(26, 38, 26, 24),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SizedBox(height: 24),
+
+              Column(
+                children: [
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: ink,
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                    alignment: Alignment.center,
+                    child: const ExcludeSemantics(
+                      child: Text(
+                        'P',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 25,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'PeerSync',
+                    style: TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Learn together. Progress together.',
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
               ),
-              alignment: Alignment.center,
-              child: const Text(
-                'P',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 25,
-                  fontWeight: FontWeight.w800,
+
+              const SizedBox(height: 48),
+
+              Semantics(
+                header: true,
+                child: const Text(
+                  'Welcome back',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'PeerSync',
-              style: TextStyle(fontSize: 25, fontWeight: FontWeight.w500),
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              'Learn together. Progress together.',
-              style: TextStyle(color: muted, fontSize: 11),
-            ),
-          ]),
-
-          const SizedBox(height: 55),
-
-          const Text(
-            'Welcome back',
-            style: TextStyle(fontSize: 23, fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 5),
-          const Text(
-            'Sign in to continue to your workspace.',
-            style: TextStyle(color: muted, fontSize: 12),
-          ),
-
-          const SizedBox(height: 23),
-
-          const FieldLabel('Access as'),
-
-          SegmentedButton<String>(
-            segments: const [
-              ButtonSegment(
-                value: 'Professor',
-                label: Text('Professor'),
+              const SizedBox(height: 5),
+              const Text(
+                'Sign in to continue to your workspace.',
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
               ),
-              ButtonSegment(
-                value: 'Student',
-                label: Text('Student'),
-              ),
-            ],
-            selected: {role},
-            onSelectionChanged: (v) {
-              setState(() {
-                role = v.first;
-                errorMessage = null;
-              });
-            },
-            showSelectedIcon: false,
-          ),
 
-          const SizedBox(height: 16),
+              const SizedBox(height: 23),
 
-          FieldLabel('Email or ${role.toLowerCase()} ID'),
+              const FieldLabel('Access as'),
 
-          TextField(
-            controller: emailController,
-            keyboardType: TextInputType.emailAddress,
-            textInputAction: TextInputAction.next,
-            decoration: const InputDecoration(
-              hintText: 'name@school.edu',
-            ),
-          ),
-
-          const SizedBox(height: 13),
-
-          const FieldLabel('Password'),
-
-          TextField(
-            controller: passwordController,
-            obscureText: !showPassword,
-            onSubmitted: (_) => isLoading ? null : _signIn(),
-            decoration: InputDecoration(
-              hintText: 'Enter password',
-              suffixIcon: IconButton(
-                onPressed: () {
+              SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(value: 'Professor', label: Text('Professor')),
+                  ButtonSegment(value: 'Student', label: Text('Student')),
+                ],
+                selected: {role},
+                onSelectionChanged: (v) {
                   setState(() {
-                    showPassword = !showPassword;
+                    role = v.first;
+                    errorMessage = null;
                   });
                 },
-                icon: Icon(
-                  showPassword
-                      ? Icons.visibility_off_outlined
-                      : Icons.visibility_outlined,
+                showSelectedIcon: false,
+              ),
+
+              const SizedBox(height: 16),
+
+              // The visible label above the field is excluded from the
+              // semantics tree and re-attached to the field itself, so a
+              // screen reader announces the label exactly once.
+              ExcludeSemantics(child: FieldLabel(emailLabel)),
+
+              Semantics(
+                label: emailLabel,
+                child: TextField(
+                  controller: emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  textInputAction: TextInputAction.next,
+                  autofillHints: const [AutofillHints.email],
+                  enabled: !isLoading,
+                  onSubmitted: (_) => passwordFocusNode.requestFocus(),
+                  decoration: const InputDecoration(
+                    hintText: 'name@school.edu',
+                  ),
                 ),
               ),
-            ),
-          ),
 
-          const SizedBox(height: 8),
+              const SizedBox(height: 13),
 
-          Row(children: [
-            Checkbox(
-              value: remember,
-              onChanged: (v) {
-                setState(() {
-                  remember = v ?? false;
-                });
-              },
-              visualDensity: VisualDensity.compact,
-            ),
-            const Text(
-              'Remember me',
-              style: TextStyle(fontSize: 11),
-            ),
-            const Spacer(),
-            TextButton(
-              onPressed: () {},
-              child: const Text(
-                'Forgot password?',
-                style: TextStyle(fontSize: 11),
-              ),
-            ),
-          ]),
+              const ExcludeSemantics(child: FieldLabel('Password')),
 
-          if (errorMessage != null) ...[
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.red.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: Colors.red.withValues(alpha: 0.25),
+              Semantics(
+                label: 'Password',
+                child: TextField(
+                  controller: passwordController,
+                  focusNode: passwordFocusNode,
+                  obscureText: !showPassword,
+                  enabled: !isLoading,
+                  autofillHints: const [AutofillHints.password],
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: (_) {
+                    if (!isLoading) _signIn();
+                  },
+                  decoration: InputDecoration(
+                    hintText: 'Enter password',
+                    suffixIcon: IconButton(
+                      tooltip: showPassword ? 'Hide password' : 'Show password',
+                      onPressed: () {
+                        setState(() {
+                          showPassword = !showPassword;
+                        });
+                      },
+                      icon: Icon(
+                        showPassword
+                            ? Icons.visibility_off_outlined
+                            : Icons.visibility_outlined,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
                 ),
               ),
-              child: Text(
-                errorMessage!,
-                style: const TextStyle(
-                  color: Colors.red,
-                  fontSize: 11,
+
+              const SizedBox(height: 8),
+
+              Row(
+                children: [
+                  MergeSemantics(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Checkbox(
+                          value: remember,
+                          onChanged: (v) {
+                            setState(() {
+                              remember = v ?? false;
+                            });
+                          },
+                        ),
+                        const ExcludeSemantics(
+                          child: Text(
+                            'Remember me',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: isLoading
+                        ? null
+                        : () => _showMessage(
+                            'Password reset is not available in this version. '
+                            'Please contact your administrator.',
+                          ),
+                    child: const Text(
+                      'Forgot password?',
+                      style: TextStyle(fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+
+              if (errorMessage != null) ...[
+                const SizedBox(height: 8),
+                Semantics(
+                  liveRegion: true,
+                  label: 'Error: $errorMessage',
+                  child: ExcludeSemantics(
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.dangerSurface,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppColors.danger),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(
+                            Icons.error_outline,
+                            size: 18,
+                            color: AppColors.danger,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              errorMessage!,
+                              style: const TextStyle(
+                                color: AppColors.danger,
+                                fontSize: 13,
+                                height: 1.35,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+
+              PrimaryButton(
+                label: isLoading ? 'Signing in…' : 'Sign in as $role',
+                enabled: !isLoading,
+                onPressed: _signIn,
+              ),
+
+              const SizedBox(height: 13),
+
+              Center(
+                child: TextButton(
+                  onPressed: isLoading
+                      ? null
+                      : () => _showMessage(
+                          role == 'Student'
+                              ? 'Ask your professor for a class join code. '
+                                    'Self-service joining is not available yet.'
+                              : 'Accounts are created by your institution. '
+                                    'Please contact your administrator.',
+                        ),
+                  child: Text(
+                    role == 'Student' ? 'Join a class' : 'Create account',
+                    style: const TextStyle(fontSize: 13),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 12),
-          ],
 
-          PrimaryButton(
-            label: isLoading ? 'Signing in...' : 'Sign in as $role',
-            onPressed: isLoading ? () {} : _signIn,
-          ),
+              const SizedBox(height: 40),
 
-          const SizedBox(height: 13),
-
-          Center(
-            child: TextButton(
-              onPressed: () {},
-              child: Text(
-                role == 'Student' ? 'Join a class' : 'Create account',
-                style: const TextStyle(fontSize: 11),
+              const Center(
+                child: Text(
+                  'PeerSync Academic Workspace · v1.0',
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+                ),
               ),
-            ),
+            ],
           ),
-
-          const SizedBox(height: 48),
-
-          const Center(
-            child: Text(
-              'PeerSync Academic Workspace · v1.0',
-              style: TextStyle(color: muted, fontSize: 9),
-            ),
-          ),
-        ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }

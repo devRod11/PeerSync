@@ -1,8 +1,14 @@
 import 'package:flutter/material.dart';
+
+import '../core/a11y/app_a11y.dart';
+import '../core/a11y/status_presentation.dart';
+import '../core/utils/error_messages.dart';
 import '../models/group.dart';
 import '../models/milestone.dart';
 import '../models/project.dart';
 import '../services/api_service.dart';
+import '../theme/app_colors.dart';
+import '../widgets/shared_widgets.dart';
 
 class ProfessorMilestonesPage extends StatefulWidget {
   const ProfessorMilestonesPage({super.key});
@@ -85,7 +91,7 @@ class _ProfessorMilestonesPageState
       if (!mounted) return;
 
       setState(() {
-        _errorMessage = e.toString();
+        _errorMessage = friendlyErrorMessage(e);
         _isLoading = false;
       });
     }
@@ -115,7 +121,7 @@ class _ProfessorMilestonesPageState
       if (!mounted) return;
 
       setState(() {
-        _errorMessage = e.toString();
+        _errorMessage = friendlyErrorMessage(e);
         _isLoading = false;
       });
     }
@@ -205,8 +211,8 @@ class _ProfessorMilestonesPageState
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Unable to save milestone: $e'),
-          backgroundColor: Colors.red,
+          content: Text('Unable to save milestone: ${friendlyErrorMessage(e)}'),
+          backgroundColor: AppColors.danger,
         ),
       );
     } finally {
@@ -234,7 +240,7 @@ class _ProfessorMilestonesPageState
           ),
           FilledButton(
             style: FilledButton.styleFrom(
-              backgroundColor: Colors.red,
+              backgroundColor: AppColors.danger,
             ),
             onPressed: () => Navigator.pop(dialogContext, true),
             child: const Text('Delete'),
@@ -281,8 +287,8 @@ class _ProfessorMilestonesPageState
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Unable to delete or reorder milestones: $e'),
-          backgroundColor: Colors.red,
+          content: Text('Unable to delete or reorder milestones: ${friendlyErrorMessage(e)}'),
+          backgroundColor: AppColors.danger,
         ),
       );
 
@@ -303,29 +309,9 @@ class _ProfessorMilestonesPageState
     return names.isEmpty ? 'Assigned groups' : names.join(', ');
   }
 
-  Color _statusColor(String status) {
-    switch (status.toLowerCase()) {
-      case 'completed':
-        return Colors.green;
-      case 'in_progress':
-        return Colors.blue;
-      case 'overdue':
-        return Colors.red;
-      default:
-        return Colors.orange;
-    }
-  }
-
-  String _formatDate(DateTime date) {
-    final local = date.toLocal();
-    return '${local.month.toString().padLeft(2, '0')}/'
-        '${local.day.toString().padLeft(2, '0')}/'
-        '${local.year}';
-  }
+  String _formatDate(DateTime date) => AppA11y.formatDate(date);
 
   Widget _buildMilestoneCard(Milestone milestone, int index) {
-    final statusColor = _statusColor(milestone.status);
-
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
@@ -357,7 +343,7 @@ class _ProfessorMilestonesPageState
                       Text(
                         'Completion Order: ${milestone.sequence}',
                         style: const TextStyle(
-                          color: Colors.grey,
+                          color: AppColors.textMuted,
                           fontSize: 13,
                         ),
                       ),
@@ -382,7 +368,7 @@ class _ProfessorMilestonesPageState
                       value: 'delete',
                       child: Text(
                         'Delete',
-                        style: TextStyle(color: Colors.red),
+                        style: TextStyle(color: AppColors.danger),
                       ),
                     ),
                   ],
@@ -408,13 +394,9 @@ class _ProfessorMilestonesPageState
                     'Due: ${_formatDate(milestone.dueDate)}',
                   ),
                 ),
-                Chip(
-                  label: Text(milestone.status.replaceAll('_', ' ')),
-                  backgroundColor: statusColor.withValues(alpha: 0.12),
-                  labelStyle: TextStyle(
-                    color: statusColor,
-                    fontWeight: FontWeight.w600,
-                  ),
+                StatusChip(
+                  presentation:
+                      StatusPresentation.forMilestone(milestone.status),
                 ),
               ],
             ),
@@ -425,7 +407,7 @@ class _ProfessorMilestonesPageState
                 const Icon(
                   Icons.groups_outlined,
                   size: 18,
-                  color: Colors.grey,
+                  color: AppColors.textMuted,
                 ),
                 const SizedBox(width: 8),
                 Expanded(
@@ -452,7 +434,7 @@ class _ProfessorMilestonesPageState
         foregroundColor: Colors.white,
       ),
       body: _isLoading && _projects.isEmpty
-          ? const Center(child: CircularProgressIndicator())
+          ? const LoadingView(message: 'Loading milestones\u2026')
           : _errorMessage != null && _projects.isEmpty
               ? _buildError()
               : RefreshIndicator(
@@ -463,7 +445,7 @@ class _ProfessorMilestonesPageState
                       const Text(
                         'PROJECT MILESTONES',
                         style: TextStyle(
-                          color: Colors.grey,
+                          color: AppColors.textMuted,
                           fontSize: 11,
                           fontWeight: FontWeight.bold,
                           letterSpacing: 1.2,
@@ -562,7 +544,7 @@ class _ProfessorMilestonesPageState
                         if (_errorMessage != null)
                           Text(
                             _errorMessage!,
-                            style: const TextStyle(color: Colors.red),
+                            style: const TextStyle(color: AppColors.danger),
                           )
                         else if (_milestones.isEmpty && !_isLoading)
                           const Card(
@@ -599,7 +581,7 @@ class _ProfessorMilestonesPageState
           children: [
             const Icon(
               Icons.error_outline,
-              color: Colors.red,
+              color: AppColors.danger,
               size: 42,
             ),
             const SizedBox(height: 12),
@@ -721,11 +703,7 @@ class _MilestoneFormDialogState extends State<MilestoneFormDialog> {
     });
   }
 
-  String _formatDate(DateTime date) {
-    return '${date.month.toString().padLeft(2, '0')}/'
-        '${date.day.toString().padLeft(2, '0')}/'
-        '${date.year}';
-  }
+  String _formatDate(DateTime date) => AppA11y.formatDate(date);
 
   void _submit() {
     if (!_formKey.currentState!.validate()) return;
@@ -779,7 +757,7 @@ class _MilestoneFormDialogState extends State<MilestoneFormDialog> {
                 Text(
                   widget.project.title,
                   style: const TextStyle(
-                    color: Colors.grey,
+                    color: AppColors.textMuted,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -823,9 +801,9 @@ class _MilestoneFormDialogState extends State<MilestoneFormDialog> {
                 ),
                 const SizedBox(height: 6),
 
-                Container(
+                DecoratedBox(
                   decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey.shade400),
+                    border: Border.all(color: AppColors.borderStrong),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Column(

@@ -1,12 +1,20 @@
+import 'package:file_picker/file_picker.dart' as file_picker;
 import 'package:flutter/material.dart';
+
+
+import '../core/a11y/app_a11y.dart';
+import '../core/a11y/status_presentation.dart';
+import '../core/utils/error_messages.dart';
 import '../models/authenticated_user.dart';
 import '../models/group.dart';
 import '../models/milestone.dart';
 import '../models/project.dart';
+import '../models/submission.dart';
 import '../models/task.dart';
 import '../services/api_service.dart';
+import '../theme/app_colors.dart';
 import '../widgets/shared_widgets.dart';
-import '../models/submission.dart';
+
 
 class ActivitiesPage extends StatefulWidget {
   final AuthenticatedUser user;
@@ -29,6 +37,7 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
   List<Task> _tasks = [];
   final Map<String, List<Milestone>> _milestonesByGroup = {};
   final Map<String, List<Submission>> _submissionsByTask = {};
+  final Set<String> _deletingSubmissionIDs = {};
 
   bool get _isProfessor =>
       widget.user.role.trim().toLowerCase() == 'professor';
@@ -151,39 +160,18 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
     } catch (error) {
       if (!mounted) return;
       setState(() {
-        _errorMessage = error.toString();
+        _errorMessage = friendlyErrorMessage(error);
         _isLoading = false;
       });
     }
   }
 
-  String _formatDate(DateTime date) {
-    const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-    ];
+  String _formatDate(DateTime date) => AppA11y.formatDate(date);
 
-    return '${months[date.month - 1]} ${date.day}, ${date.year}';
-  }
-
-
-  String _statusLabel(String status) {
-    switch (status.toLowerCase()) {
-      case 'in_progress':
-        return 'IN PROGRESS';
-      case 'completed':
-        return 'COMPLETED';
-      default:
-        return 'PENDING';
-    }
-  }
 
   Widget _statusBadge(String status) {
-    return BadgeX(
-      _statusLabel(status),
-      dark: status.toLowerCase() == 'in_progress',
-      danger: status.toLowerCase() == 'pending',
-    );
+    // Status is conveyed by an icon plus a text label, never by color alone.
+    return StatusChip(presentation: StatusPresentation.forTask(status));
   }
 
   Group? _findGroup(String groupID) {
@@ -220,25 +208,14 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
   }
 
   Future<void> _deleteTask(Task task) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Delete task?'),
-        content: Text('Are you sure you want to delete "${task.title}"?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Delete task?',
+      message: 'Are you sure you want to delete "${task.title}"? '
+          'This action cannot be undone.',
     );
 
-    if (confirmed != true) return;
+    if (!confirmed) return;
 
     try {
       await ApiService.deleteTask(task.id);
@@ -283,6 +260,66 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
     );
   }
 }
+
+Future<void> _deleteSubmission(Submission submission) async {
+    // Only pending submissions can be deleted by students.
+    if (submission.status.trim().toLowerCase() != 'pending') {
+      return;
+    }
+
+    if (_deletingSubmissionIDs.contains(submission.id)) {
+      return;
+    }
+
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Delete submission?',
+      message: 'Are you sure you want to delete '
+          '"${submission.fileName}"? '
+          'This will permanently delete the uploaded file '
+          'and its submission record.',
+    );
+
+    if (!confirmed || !mounted) return;
+
+    setState(() {
+      _deletingSubmissionIDs.add(submission.id);
+    });
+
+    try {
+      await ApiService.deleteSubmission(submission.id);
+
+      if (!mounted) return;
+
+      // Refresh submissions and task status only after the backend
+      // confirms that the deletion workflow completed successfully.
+      await _loadActivities();
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Submission deleted successfully.'),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Unable to delete submission: ${friendlyErrorMessage(error)}',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _deletingSubmissionIDs.remove(submission.id);
+        });
+      }
+    }
+  }
 
   Future<void> _openTaskForm({Task? existingTask}) async {
   final editableGroups = _isProfessor
@@ -345,39 +382,19 @@ Widget _buildSubmissionStatus(Task task) {
   final submission = _getLatestSubmission(task.id);
 
   if (submission == null) {
-    return const BadgeX('MY SUBMISSION: NOT SUBMITTED');
+    return const StatusChip(
+      presentation: StatusPresentation(
+        label: 'Not submitted',
+        icon: Icons.upload_file_outlined,
+        tone: StatusTone.neutral,
+      ),
+      prefix: 'My submission',
+    );
   }
 
-  final status = submission.status.toLowerCase();
-
-  String label;
-  bool dark = false;
-  bool danger = false;
-
-  switch (status) {
-    case 'pending':
-      label = 'MY SUBMISSION: PENDING REVIEW';
-      dark = true;
-      break;
-
-    case 'revision_required':
-      label = 'MY SUBMISSION: REVISION REQUIRED';
-      danger = true;
-      break;
-
-    case 'approved':
-      label = 'MY SUBMISSION: APPROVED';
-      dark = true;
-      break;
-
-    default:
-      label = 'MY SUBMISSION: ${status.toUpperCase()}';
-  }
-
-  return BadgeX(
-    label,
-    dark: dark,
-    danger: danger,
+  return StatusChip(
+    presentation: StatusPresentation.forSubmission(submission.status),
+    prefix: 'My submission',
   );
 }
 
@@ -472,6 +489,34 @@ Widget _buildSubmissionDetails(Task task) {
           Text(
             submission.feedback!,
             style: subStyle,
+          ),
+        ],
+        if (submission.status.trim().toLowerCase() == 'pending') ...[
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _deletingSubmissionIDs.contains(submission.id)
+                  ? null
+                  : () => _deleteSubmission(submission),
+              icon: _deletingSubmissionIDs.contains(submission.id)
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                      ),
+                    )
+                  : const Icon(Icons.delete_outline),
+              label: Text(
+                _deletingSubmissionIDs.contains(submission.id)
+                    ? 'Deleting submission...'
+                    : 'Delete submission',
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Theme.of(context).colorScheme.error,
+              ),
+            ),
           ),
         ],
       ],
@@ -603,7 +648,7 @@ Widget _buildSubmissionDetails(Task task) {
           padding: EdgeInsets.symmetric(vertical: 15),
           child: Column(
             children: [
-              Icon(Icons.assignment_outlined, size: 34, color: Colors.grey),
+              Icon(Icons.assignment_outlined, size: 34, color: AppColors.textMuted),
               SizedBox(height: 8),
               Text('No tasks found', style: titleStyle),
               SizedBox(height: 5),
@@ -660,10 +705,9 @@ Widget _buildSubmissionDetails(Task task) {
                             style: tinyCaps,
                           ),
                           const Spacer(),
-                          BadgeX(
-                            normalized.replaceAll('_', ' ').toUpperCase(),
-                            dark: normalized == 'in_progress',
-                            danger: normalized == 'overdue',
+                          StatusChip(
+                            presentation:
+                                StatusPresentation.forMilestone(normalized),
                           ),
                         ],
                       ),
@@ -696,33 +740,13 @@ Widget _buildSubmissionDetails(Task task) {
 
   Widget _buildLoadingOrError() {
     if (_isLoading) {
-      return const InfoCard(
-        child: Padding(
-          padding: EdgeInsets.all(22),
-          child: Center(child: CircularProgressIndicator()),
-        ),
-      );
+      return const LoadingView(message: 'Loading activities…');
     }
 
     if (_errorMessage != null) {
-      return InfoCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Unable to load activities', style: titleStyle),
-            const SizedBox(height: 6),
-            Text(_errorMessage!, style: subStyle),
-            const SizedBox(height: 10),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                onPressed: _loadActivities,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Try again'),
-              ),
-            ),
-          ],
-        ),
+      return ErrorStateView(
+        message: _errorMessage!,
+        onRetry: _loadActivities,
       );
     }
 
@@ -823,35 +847,92 @@ class _SubmissionDialog extends StatefulWidget {
       _SubmissionDialogState();
 }
 
-class _SubmissionDialogState extends State<_SubmissionDialog> {
-  late final TextEditingController fileNameController;
-  late final TextEditingController fileTypeController;
 
+class _SubmissionDialogState extends State<_SubmissionDialog> {
+  file_picker.PlatformFile? selectedFile;
   bool isSaving = false;
 
-  @override
-  void initState() {
-    super.initState();
+  static const int maxFileSize = 25 * 1024 * 1024;
 
-    fileNameController = TextEditingController();
-    fileTypeController = TextEditingController();
+  static const List<String> allowedExtensions = [
+    'pdf',
+    'doc',
+    'docx',
+    'ppt',
+    'pptx',
+    'xls',
+    'xlsx',
+    'txt',
+    'csv',
+    'zip',
+  ];
+
+  Future<void> _pickFile() async {
+    try {
+      final result = await file_picker.FilePicker.pickFiles(
+        type: file_picker.FileType.custom,
+        allowedExtensions: allowedExtensions,
+      );
+
+      if (result.isEmpty) return;
+
+      final file = result.single;
+      final fileSize = await file.length();
+
+      if (fileSize == null) {
+        if (!mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Unable to determine the selected file size.'),
+          ),
+        );
+        return;
+      }
+
+      if (fileSize > maxFileSize) {
+        if (!mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('File size exceeds the 25 MB upload limit.'),
+          ),
+        );
+        return;
+      }
+
+      setState(() {
+        selectedFile = file;
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Unable to select file: $e'),
+        ),
+      );
+    }
   }
 
-  @override
-  void dispose() {
-    fileNameController.dispose();
-    fileTypeController.dispose();
-    super.dispose();
+  String _formatFileSize(int? bytes) {
+    if (bytes == null) return 'File size unavailable';
+    if (bytes < 1024) return '$bytes B';
+
+    if (bytes < 1024 * 1024) {
+      return '${(bytes / 1024).toStringAsFixed(2)} KB';
+    }
+
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(2)} MB';
   }
 
   Future<void> _submit() async {
-    final fileName = fileNameController.text.trim();
-    final fileType = fileTypeController.text.trim();
+    final file = selectedFile;
 
-    if (fileName.isEmpty || fileType.isEmpty) {
+    if (file == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please enter the filename and file type.'),
+          content: Text('Please select a file first.'),
         ),
       );
       return;
@@ -862,12 +943,14 @@ class _SubmissionDialogState extends State<_SubmissionDialog> {
     });
 
     try {
-      await ApiService.createSubmission(
+      final fileBytes = await file.readAsBytes();
+
+      await ApiService.uploadSubmission(
         projectID: widget.task.projectID,
         groupID: widget.task.groupID,
         taskID: widget.task.id,
-        fileName: fileName,
-        fileType: fileType,
+        fileName: file.name,
+        fileBytes: fileBytes,
       );
 
       if (!mounted) return;
@@ -882,7 +965,7 @@ class _SubmissionDialogState extends State<_SubmissionDialog> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Unable to record submission: $error'),
+          content: Text('Unable to upload submission: $error'),
         ),
       );
     }
@@ -890,58 +973,39 @@ class _SubmissionDialogState extends State<_SubmissionDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final latestSubmissionNote =
-        'Task: ${widget.task.title}';
-
     return AlertDialog(
       title: const Text('Submit Task'),
       content: SizedBox(
         width: 420,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                latestSubmissionNote,
-                style: titleStyle,
-              ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Task: ${widget.task.title}',
+              style: titleStyle,
+            ),
 
-              const SizedBox(height: 8),
+            const SizedBox(height: 12),
 
-              const Text(
-                'Enter the details of your document below. '
-                'The actual document upload will be available '
-                'when Google Drive integration is implemented.',
-                style: subStyle,
-              ),
+            const Text(
+              'Select the document you want to submit. '
+              'Supported formats include PDF, Word, PowerPoint, '
+              'Excel, TXT, CSV, and ZIP.',
+              style: subStyle,
+            ),
 
-              const SizedBox(height: 18),
+            const SizedBox(height: 18),
 
-              const FieldLabel('Filename'),
+            OutlinedButton.icon(
+              onPressed: isSaving ? null : _pickFile,
+              icon: const Icon(Icons.folder_open_outlined),
+              label: const Text('Choose File'),
+            ),
 
-              TextField(
-                controller: fileNameController,
-                enabled: !isSaving,
-                decoration: const InputDecoration(
-                  hintText: 'e.g. Chapter1_Introduction',
-                  prefixIcon: Icon(Icons.description_outlined),
-                ),
-              ),
+            const SizedBox(height: 12),
 
-              const FieldLabel('File type'),
-
-              TextField(
-                controller: fileTypeController,
-                enabled: !isSaving,
-                decoration: const InputDecoration(
-                  hintText: 'e.g. PDF, DOCX, PPTX',
-                  prefixIcon: Icon(Icons.insert_drive_file_outlined),
-                ),
-              ),
-
-              const SizedBox(height: 14),
-
+            if (selectedFile != null)
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(12),
@@ -951,23 +1015,63 @@ class _SubmissionDialogState extends State<_SubmissionDialog> {
                       .surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Row(
                   children: [
-                    Icon(Icons.info_outline, size: 18),
-                    SizedBox(width: 8),
+                    const Icon(
+                      Icons.insert_drive_file_outlined,
+                      size: 28,
+                    ),
+                    const SizedBox(width: 10),
                     Expanded(
-                      child: Text(
-                        'This records your submission details only. '
-                        'No document is uploaded or stored yet.',
-                        style: subStyle,
+                      child: Column(
+                        crossAxisAlignment:
+                            CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            selectedFile!.name,
+                            style: titleStyle,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _formatFileSize(selectedFile!.lengthSync()),
+                            style: subStyle,
+                          ),
+                        ],
                       ),
+                    ),
+                    IconButton(
+                      tooltip: 'Remove selected file',
+                      onPressed: isSaving
+                          ? null
+                          : () {
+                              setState(() {
+                                selectedFile = null;
+                              });
+                            },
+                      icon: const Icon(Icons.close),
                     ),
                   ],
                 ),
               ),
+
+            const SizedBox(height: 12),
+
+            const Text(
+              'Maximum file size: 25 MB',
+              style: subStyle,
+            ),
+
+            if (isSaving) ...[
+              const SizedBox(height: 16),
+              const LinearProgressIndicator(),
+              const SizedBox(height: 8),
+              const Text(
+                'Uploading your submission...',
+                style: subStyle,
+              ),
             ],
-          ),
+          ],
         ),
       ),
       actions: [
@@ -978,7 +1082,9 @@ class _SubmissionDialogState extends State<_SubmissionDialog> {
           child: const Text('Cancel'),
         ),
         FilledButton.icon(
-          onPressed: isSaving ? null : _submit,
+          onPressed: isSaving || selectedFile == null
+              ? null
+              : _submit,
           icon: isSaving
               ? const SizedBox(
                   width: 16,
@@ -987,9 +1093,9 @@ class _SubmissionDialogState extends State<_SubmissionDialog> {
                     strokeWidth: 2,
                   ),
                 )
-              : const Icon(Icons.check),
+              : const Icon(Icons.cloud_upload_outlined),
           label: Text(
-            isSaving ? 'Submitting...' : 'Submit',
+            isSaving ? 'Uploading...' : 'Upload Submission',
           ),
         ),
       ],
@@ -1089,14 +1195,7 @@ class _TaskFormDialogState extends State<_TaskFormDialog> {
     return null;
   }
 
-  String _formatDate(DateTime date) {
-    const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-    ];
-
-    return '${months[date.month - 1]} ${date.day}, ${date.year}';
-  }
+  String _formatDate(DateTime date) => AppA11y.formatDate(date);
 
   Future<void> _selectDueDate() async {
     final date = await showDatePicker(

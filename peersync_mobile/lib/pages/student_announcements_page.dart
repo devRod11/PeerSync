@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+
+import '../core/a11y/app_a11y.dart';
+import '../core/utils/error_messages.dart';
 import '../models/announcement.dart';
 import '../services/api_service.dart';
+import '../theme/app_colors.dart';
 import '../widgets/shared_widgets.dart';
 
 class StudentAnnouncementsPage extends StatefulWidget {
@@ -39,33 +43,7 @@ class _StudentAnnouncementsPageState
     _announcementsFuture = ApiService.getAnnouncements();
   }
 
-  String _formatDate(DateTime? date) {
-    if (date == null) {
-      return 'Date unavailable';
-    }
-
-    final localDate = date.toLocal();
-    final now = DateTime.now();
-    final difference = now.difference(localDate);
-
-    if (difference.inMinutes < 1 && !difference.isNegative) {
-      return 'Just now';
-    }
-
-    if (difference.inMinutes < 60 && !difference.isNegative) {
-      return '${difference.inMinutes}m ago';
-    }
-
-    if (difference.inHours < 24 && !difference.isNegative) {
-      return '${difference.inHours}h ago';
-    }
-
-    if (difference.inDays < 7 && !difference.isNegative) {
-      return '${difference.inDays}d ago';
-    }
-
-    return '${localDate.day}/${localDate.month}/${localDate.year}';
-  }
+  String _formatDate(DateTime? date) => AppA11y.relativeTime(date);
 
   List<Announcement> _filterAnnouncements(
     List<Announcement> announcements,
@@ -175,11 +153,8 @@ class _StudentAnnouncementsPageState
           future: _announcementsFuture,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Padding(
-                padding: EdgeInsets.symmetric(vertical: 45),
-                child: Center(
-                  child: CircularProgressIndicator(),
-                ),
+              return const LoadingView(
+                message: 'Loading announcements\u2026',
               );
             }
 
@@ -190,7 +165,7 @@ class _StudentAnnouncementsPageState
                     const Icon(
                       Icons.error_outline,
                       size: 38,
-                      color: Colors.red,
+                      color: AppColors.danger,
                     ),
                     const SizedBox(height: 10),
                     const Text(
@@ -199,7 +174,7 @@ class _StudentAnnouncementsPageState
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      snapshot.error.toString(),
+                      friendlyErrorMessage(snapshot.error!),
                       style: subStyle,
                       textAlign: TextAlign.center,
                     ),

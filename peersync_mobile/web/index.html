@@ -1,45 +1,182 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <!--
-    If you are serving your web app in a path other than the root, change the
-    href value below to reflect the base path you are serving from.
-
-    The path provided below has to start and end with a slash "/" in order for
-    it to work correctly.
-
-    For more details:
-    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
-
-    This is a placeholder for base href that will be replaced by the value of
-    the `--base-href` argument provided to `flutter build`.
+    The base href is replaced by `flutter build web --base-href`. It must start
+    and end with "/" so that relative asset URLs resolve correctly when the app
+    is hosted under a sub-path.
   -->
   <base href="$FLUTTER_BASE_HREF">
 
   <meta charset="UTF-8">
-  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  <meta http-equiv="X-UA-Compatible" content="IE=Edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="description" content="PeerSync keeps professors and student capstone teams in sync: projects, groups, milestones, tasks, submissions, reviews and announcements in one place.">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#0A2342">
 
-  <!-- iOS meta tags & icons -->
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="peersync_mobile">
-  <link rel="apple-touch-icon" href="icons/Icon-192.png">
-
-  <!-- Favicon -->
-  <link rel="icon" type="image/png" href="favicon.png"/>
-
-  <title>peersync_mobile</title>
+  <!-- Progressive Web App -->
   <link rel="manifest" href="manifest.json">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="application-name" content="PeerSync">
+
+  <!-- iOS: Safari does not read the manifest for install metadata -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="PeerSync">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">
+
+  <!-- Favicons -->
+  <link rel="icon" type="image/png" sizes="48x48" href="icons/favicon-48.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="icons/favicon-16.png">
+
+  <title>PeerSync</title>
+
+  <style>
+    /*
+      Boot splash. Rendered by the browser before the Flutter engine is ready,
+      so it also acts as the "first paint" for slow connections and for the
+      installed-PWA launch screen. Colours mirror AppColors so there is no
+      flash of a different theme when Flutter takes over.
+    */
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background-color: #F2F5FF;
+      color: #0A2342;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        "Helvetica Neue", Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      overscroll-behavior: none;
+    }
+
+    #peersync-splash {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+      background-color: #F2F5FF;
+      z-index: 9999;
+      transition: opacity 220ms ease-out;
+    }
+
+    #peersync-splash.is-hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .peersync-mark {
+      width: 68px;
+      height: 68px;
+      border: 2px solid #0A2342;
+      border-radius: 18px 18px 18px 5px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 32px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      color: #0A2342;
+      background-color: #FFFFFF;
+    }
+
+    .peersync-wordmark {
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: 0.2px;
+    }
+
+    .peersync-tagline {
+      margin-top: -10px;
+      font-size: 13px;
+      font-weight: 500;
+      color: #4A5568;
+    }
+
+    .peersync-progress {
+      width: 148px;
+      height: 4px;
+      border-radius: 2px;
+      background-color: #D8E1F0;
+      overflow: hidden;
+    }
+
+    .peersync-progress > span {
+      display: block;
+      width: 40%;
+      height: 100%;
+      border-radius: 2px;
+      background-color: #0A2342;
+      animation: peersync-slide 1.15s ease-in-out infinite;
+    }
+
+    @keyframes peersync-slide {
+      0%   { transform: translateX(-100%); }
+      100% { transform: translateX(250%); }
+    }
+
+    /* WCAG 2.2 SC 2.3.3: honour the OS "reduce motion" preference. */
+    @media (prefers-reduced-motion: reduce) {
+      .peersync-progress > span { animation: none; width: 100%; opacity: 0.55; }
+      #peersync-splash { transition: none; }
+    }
+
+    .peersync-noscript {
+      max-width: 34rem;
+      margin: 0 auto;
+      padding: 2rem 1.25rem;
+      font-size: 1rem;
+      line-height: 1.6;
+    }
+  </style>
 </head>
 <body>
-  <!--
-    You can customize the "flutter_bootstrap.js" script.
-    This is useful to provide a custom configuration to the Flutter loader
-    or to give the user feedback during the initialization process.
+  <div id="peersync-splash" role="status" aria-live="polite" aria-label="Loading PeerSync">
+    <div class="peersync-mark" aria-hidden="true">P</div>
+    <div class="peersync-wordmark">PeerSync</div>
+    <div class="peersync-tagline">Capstone collaboration</div>
+    <div class="peersync-progress" aria-hidden="true"><span></span></div>
+  </div>
 
-    For more details:
-    * https://docs.flutter.dev/platform-integration/web/initialization
+  <noscript>
+    <div class="peersync-noscript">
+      <h1>PeerSync needs JavaScript</h1>
+      <p>
+        PeerSync is an interactive application. Please enable JavaScript in your
+        browser, then reload this page.
+      </p>
+    </div>
+  </noscript>
+
+  <script>
+    // Hide the splash as soon as Flutter paints its first frame. Flutter web
+    // dispatches `flutter-first-frame` on window; the timeout is a safety net
+    // so a failed boot never leaves the user staring at a spinner forever.
+    (function () {
+      var splash = document.getElementById('peersync-splash');
+
+      function hideSplash() {
+        if (!splash || splash.classList.contains('is-hidden')) return;
+        splash.classList.add('is-hidden');
+        window.setTimeout(function () {
+          if (splash && splash.parentNode) splash.parentNode.removeChild(splash);
+        }, 260);
+      }
+
+      window.addEventListener('flutter-first-frame', hideSplash, { once: true });
+      window.setTimeout(hideSplash, 20000);
+    })();
+  </script>
+
+  <!--
+    The default bootstrap registers Flutter's generated service worker, which
+    caches the compiled app shell so PeerSync opens offline. `flutter_bootstrap.js`
+    is emitted by `flutter build web`.
   -->
   <script src="flutter_bootstrap.js" async></script>
 </body>

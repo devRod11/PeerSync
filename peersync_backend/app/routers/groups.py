@@ -1,11 +1,12 @@
 from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field
 from google.cloud.firestore import SERVER_TIMESTAMP
 from google.cloud.firestore_v1.base_query import FieldFilter
+from pydantic import BaseModel, Field
+
 from app.database.firebase import get_firestore_client
 from app.dependencies.auth import get_current_user, require_professor
-
 
 router = APIRouter(prefix="/groups", tags=["Groups"])
 
@@ -578,7 +579,12 @@ def add_group_members(
         if student_id not in existing_ids
     ]
 
-    verify_students_not_in_other_group(db, group_data["projectID"], students_to_add, target_group_id=group_id)
+    verify_students_not_in_other_group(
+        db,
+        group_data["projectID"],
+        students_to_add,
+        target_group_id=group_id,
+    )
 
     if not students_to_add:
         raise HTTPException(

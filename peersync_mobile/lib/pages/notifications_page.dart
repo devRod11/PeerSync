@@ -1,66 +1,116 @@
+import 'dart:async';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
+import '../core/a11y/app_a11y.dart';
+import '../core/a11y/status_presentation.dart';
+import '../core/utils/error_messages.dart';
 import '../models/notification.dart';
 import '../services/api_service.dart';
+import '../theme/app_colors.dart';
 import '../widgets/shared_widgets.dart';
 
 class NotificationsPage extends StatefulWidget {
-    final ValueChanged<int>? onUnreadCountChanged;
-    final VoidCallback? onBack;
+  final ValueChanged<int>? onUnreadCountChanged;
+  final ValueListenable<int> refreshSignal;
+  final VoidCallback? onBack;
 
-    const NotificationsPage({
-      super.key,
-      this.onUnreadCountChanged,
-      this.onBack
-    });
 
-    @override
-    State<NotificationsPage> createState() =>
-        _NotificationsPageState();
-  }
-
-class _NotificationsPageState extends State<NotificationsPage> {
-  String filter = 'All';
-
-  List<AppNotification> _notifications = [];
-
-  bool _isLoading = true;
-  bool _isMarkingAllRead = false;
-  String? _errorMessage;
+  const NotificationsPage({
+    super.key,
+    this.onUnreadCountChanged,
+    this.onBack,
+    required this.refreshSignal,
+  });
 
   @override
-  void initState() {
-    super.initState();
-    _loadNotifications();
-  }
+  State<NotificationsPage> createState() => _NotificationsPageState();
+}
 
-  void _notifyUnreadCountChanged() { widget.onUnreadCountChanged?.call(_unreadCount); }
+class _NotificationsPageState extends State<NotificationsPage> {
+    String filter = 'All';
 
-  Future<void> _loadNotifications() async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
+    List<AppNotification> _notifications = [];
 
-    try {
-      final notifications = await ApiService.getNotifications();
+    bool _isLoading = true;
+    bool _isMarkingAllRead = false;
+    String? _errorMessage;
 
-      if (!mounted) return;
+    // Prevents an older request from overwriting a newer refresh.
+    int _loadRequestId = 0;
 
-      setState(() {
-        _notifications = notifications;
-        _isLoading = false;
-      });
+    int _lastRefreshSignal = 0;
 
-      _notifyUnreadCountChanged();
-    } catch (e) {
-      if (!mounted) return;
+    @override
+    void initState() {
+      super.initState();
 
-      setState(() {
-        _errorMessage = e.toString();
-        _isLoading = false;
-      });
+      _lastRefreshSignal = widget.refreshSignal.value;
+      widget.refreshSignal.addListener(_onRefreshSignalChanged);
+
+      _loadNotifications();
     }
-  }
+
+    @override
+    void dispose() {
+      widget.refreshSignal.removeListener(_onRefreshSignalChanged);
+      super.dispose();
+    }
+
+    void _onRefreshSignalChanged() {
+      final currentSignal = widget.refreshSignal.value;
+
+      if (currentSignal == _lastRefreshSignal) return;
+
+      _lastRefreshSignal = currentSignal;
+
+      // Keep the existing list visible while the latest data is fetched.
+      unawaited(_loadNotifications(silent: true));
+    }
+
+    void _notifyUnreadCountChanged() {
+      widget.onUnreadCountChanged?.call(_unreadCount);
+    }
+
+    Future<void> _loadNotifications({bool silent = false}) async {
+      final requestId = ++_loadRequestId;
+
+      if (!silent) {
+        setState(() {
+          _isLoading = true;
+          _errorMessage = null;
+        });
+      } else {
+        setState(() {
+          _errorMessage = null;
+        });
+      }
+
+      try {
+        final notifications = await ApiService.getNotifications();
+
+        if (!mounted || requestId != _loadRequestId) return;
+
+        setState(() {
+          _notifications = notifications;
+          _isLoading = false;
+          _errorMessage = null;
+        });
+
+        _notifyUnreadCountChanged();
+      } catch (e) {
+        if (!mounted || requestId != _loadRequestId) return;
+
+        setState(() {
+          _isLoading = false;
+
+          // Do not replace a working notification list with an error
+          // just because a background refresh temporarily failed.
+          if (!silent || _notifications.isEmpty) {
+            _errorMessage = friendlyErrorMessage(e);
+          }
+        });
+      }
+    }
 
   List<AppNotification> get _filteredNotifications {
     switch (filter) {
@@ -84,8 +134,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
               final collection =
                   notification.relatedCollections.toLowerCase();
 
-              return collection == 'tasks' ||
-                  collection == 'submissions';
+              return collection == 'tasks' || collection == 'submissions';
             })
             .toList();
 
@@ -95,9 +144,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
   }
 
   int get _unreadCount {
-    return _notifications
-        .where((notification) => !notification.isRead)
-        .length;
+    return _notifications.where((notification) => !notification.isRead).length;
   }
 
   IconData _notificationIcon(AppNotification notification) {
@@ -116,32 +163,6 @@ class _NotificationsPageState extends State<NotificationsPage> {
     }
   }
 
-  String _formatTime(DateTime? date) {
-    if (date == null) return 'Date unavailable';
-
-    final localDate = date.toLocal();
-    final now = DateTime.now();
-    final difference = now.difference(localDate);
-
-    if (difference.inMinutes < 1 && !difference.isNegative) {
-      return 'Just now';
-    }
-
-    if (difference.inMinutes < 60 && !difference.isNegative) {
-      return '${difference.inMinutes} minutes ago';
-    }
-
-    if (difference.inHours < 24 && !difference.isNegative) {
-      return '${difference.inHours} hours ago';
-    }
-
-    if (difference.inDays < 7 && !difference.isNegative) {
-      return '${difference.inDays} days ago';
-    }
-
-    return '${localDate.day}/${localDate.month}/${localDate.year}';
-  }
-
   bool _isToday(DateTime? date) {
     if (date == null) return false;
 
@@ -151,6 +172,14 @@ class _NotificationsPageState extends State<NotificationsPage> {
     return localDate.year == now.year &&
         localDate.month == now.month &&
         localDate.day == now.day;
+  }
+
+  void _showSnack(String message) {
+    if (!mounted) return;
+    AppA11y.announce(context, message);
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _markAsRead(AppNotification notification) async {
@@ -170,19 +199,13 @@ class _NotificationsPageState extends State<NotificationsPage> {
         );
 
         if (index != -1) {
-          _notifications[index] =
-              _notifications[index].copyWith(isRead: true);
+          _notifications[index] = _notifications[index].copyWith(isRead: true);
         }
       });
       _notifyUnreadCountChanged();
+      _showSnack('Notification marked as read.');
     } catch (e) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Unable to update notification: $e'),
-        ),
-      );
+      _showSnack(friendlyErrorMessage(e));
     }
   }
 
@@ -200,19 +223,14 @@ class _NotificationsPageState extends State<NotificationsPage> {
 
       setState(() {
         _notifications = _notifications
-            .map((notification) =>
-                notification.copyWith(isRead: true))
+            .map((notification) => notification.copyWith(isRead: true))
             .toList();
 
         _isMarkingAllRead = false;
       });
       _notifyUnreadCountChanged();
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('All notifications marked as read.'),
-        ),
-      );
+      _showSnack('All notifications marked as read.');
     } catch (e) {
       if (!mounted) return;
 
@@ -220,111 +238,116 @@ class _NotificationsPageState extends State<NotificationsPage> {
         _isMarkingAllRead = false;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Unable to mark all as read: $e'),
-        ),
-      );
+      _showSnack(friendlyErrorMessage(e));
     }
   }
 
-  Future<void> _deleteNotification(
-    AppNotification notification,
-  ) async {
+  Future<void> _deleteNotification(AppNotification notification) async {
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Delete notification?',
+      message: '"${notification.title}" will be permanently removed.',
+    );
+
+    if (!confirmed) return;
+
     try {
       await ApiService.deleteNotification(notification.id);
 
       if (!mounted) return;
 
       setState(() {
-        _notifications.removeWhere(
-          (item) => item.id == notification.id,
-        );
+        _notifications.removeWhere((item) => item.id == notification.id);
       });
       _notifyUnreadCountChanged();
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Notification deleted.'),
-        ),
-      );
+      _showSnack('Notification deleted.');
     } catch (e) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Unable to delete notification: $e'),
-        ),
-      );
+      _showSnack(friendlyErrorMessage(e));
     }
   }
 
-  Widget _buildNotificationCard(
-    AppNotification notification,
-  ) {
+  Widget _buildNotificationCard(AppNotification notification) {
+    final isUnread = !notification.isRead;
+    final timeLabel = AppA11y.relativeTime(notification.createdAt);
+
     return InfoCard(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            _notificationIcon(notification),
-            size: 25,
-            color: notification.isRead
-                ? Colors.grey
-                : Theme.of(context).colorScheme.primary,
+          ExcludeSemantics(
+            child: Icon(
+              _notificationIcon(notification),
+              size: 25,
+              color: isUnread ? AppColors.info : AppColors.textMuted,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: InkWell(
-              onTap: () => _markAsRead(notification),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+            child: Semantics(
+              button: true,
+              label: [
+                if (isUnread) 'Unread notification',
+                notification.title,
+                notification.description,
+                timeLabel,
+                if (isUnread) 'Double tap to mark as read',
+              ].join('. '),
+              child: InkWell(
+                onTap: () => _markAsRead(notification),
+                child: ExcludeSemantics(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: Text(
-                          notification.title,
-                          style: TextStyle(
-                            fontWeight: notification.isRead
-                                ? FontWeight.normal
-                                : FontWeight.bold,
-                            fontSize: 14,
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              notification.title,
+                              style: TextStyle(
+                                fontWeight: isUnread
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                                fontSize: 15,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
                           ),
-                        ),
+                          if (isUnread) ...[
+                            const SizedBox(width: 8),
+                            const StatusChip(
+                              presentation: StatusPresentation(
+                                label: 'Unread',
+                                icon: Icons.circle,
+                                tone: StatusTone.info,
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
-                      if (!notification.isRead)
-                        Container(
-                          width: 8,
-                          height: 8,
-                          decoration: const BoxDecoration(
-                            color: Colors.blue,
-                            shape: BoxShape.circle,
+                      const SizedBox(height: 6),
+                      Text(notification.description, style: subStyle),
+                      const SizedBox(height: 7),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.schedule,
+                            size: 14,
+                            color: AppColors.textMuted,
                           ),
-                        ),
+                          const SizedBox(width: 4),
+                          Text(timeLabel, style: subStyle),
+                        ],
+                      ),
                     ],
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    notification.description,
-                    style: subStyle,
-                  ),
-                  const SizedBox(height: 7),
-                  Text(
-                    _formatTime(notification.createdAt),
-                    style: subStyle,
-                  ),
-                ],
+                ),
               ),
             ),
           ),
           IconButton(
-            tooltip: 'Delete notification',
-            visualDensity: VisualDensity.compact,
-            icon: const Icon(
-              Icons.delete_outline,
-              size: 20,
-            ),
+            tooltip: 'Delete notification: ${notification.title}',
+            icon: const Icon(Icons.delete_outline, size: 22),
             onPressed: () => _deleteNotification(notification),
           ),
         ],
@@ -336,39 +359,23 @@ class _NotificationsPageState extends State<NotificationsPage> {
     final notifications = _filteredNotifications;
 
     if (notifications.isEmpty) {
-      return InfoCard(
-        child: Column(
-          children: [
-            const Icon(
-              Icons.notifications_none,
-              size: 40,
-            ),
-            const SizedBox(height: 10),
-            Text(
-              filter == 'All'
-                  ? 'No notifications yet.'
-                  : 'No $filter notifications.',
-              style: titleStyle,
-            ),
-            const SizedBox(height: 5),
-            const Text(
-              'New notifications will appear here.',
-              style: subStyle,
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
+      return EmptyStateView(
+        icon: Icons.notifications_none,
+        title: filter == 'All'
+            ? 'No notifications yet'
+            : 'No $filter notifications',
+        message: filter == 'All'
+            ? 'New notifications will appear here.'
+            : 'Try a different filter to see other notifications.',
       );
     }
 
     final todayNotifications = notifications
-        .where((notification) =>
-            _isToday(notification.createdAt))
+        .where((notification) => _isToday(notification.createdAt))
         .toList();
 
     final earlierNotifications = notifications
-        .where((notification) =>
-            !_isToday(notification.createdAt))
+        .where((notification) => !_isToday(notification.createdAt))
         .toList();
 
     return Column(
@@ -391,18 +398,11 @@ class _NotificationsPageState extends State<NotificationsPage> {
     return PageBody(
       children: [
         Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             IconButton(
               onPressed: widget.onBack,
-              icon: const Icon(Icons.arrow_back_ios_new, size: 24),
+              icon: const Icon(Icons.arrow_back_ios_new, size: 22),
               tooltip: 'Back to Dashboard',
-              visualDensity: VisualDensity.compact,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(
-                minWidth: 36,
-                minHeight: 36,
-              ),
             ),
             const SizedBox(width: 8),
             const Expanded(
@@ -416,35 +416,35 @@ class _NotificationsPageState extends State<NotificationsPage> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              '$_unreadCount unread',
-              style: subStyle,
+            Semantics(
+              liveRegion: true,
+              child: Text(
+                _unreadCount == 1
+                    ? '1 unread notification'
+                    : '$_unreadCount unread notifications',
+                style: subStyle,
+              ),
             ),
             Row(
               children: [
                 IconButton(
                   tooltip: 'Refresh notifications',
-                  onPressed: _isLoading
-                      ? null
-                      : _loadNotifications,
+                  onPressed: _isLoading ? null : _loadNotifications,
                   icon: const Icon(Icons.refresh),
                 ),
                 TextButton(
-                  onPressed: _unreadCount == 0 ||
-                          _isMarkingAllRead
+                  onPressed: _unreadCount == 0 || _isMarkingAllRead
                       ? null
                       : _markAllAsRead,
                   child: _isMarkingAllRead
                       ? const SizedBox(
-                          width: 15,
-                          height: 15,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                          ),
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Text(
                           'Mark all as read',
-                          style: TextStyle(fontSize: 10),
+                          style: TextStyle(fontSize: 13),
                         ),
                 ),
               ],
@@ -470,40 +470,11 @@ class _NotificationsPageState extends State<NotificationsPage> {
         const SizedBox(height: 12),
 
         if (_isLoading)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 40),
-            child: Center(
-              child: CircularProgressIndicator(),
-            ),
-          )
+          const LoadingView(message: 'Loading notifications…')
         else if (_errorMessage != null)
-          InfoCard(
-            child: Column(
-              children: [
-                const Icon(
-                  Icons.error_outline,
-                  color: Colors.red,
-                  size: 38,
-                ),
-                const SizedBox(height: 10),
-                const Text(
-                  'Unable to load notifications.',
-                  style: titleStyle,
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  _errorMessage!,
-                  style: subStyle,
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 12),
-                ElevatedButton.icon(
-                  onPressed: _loadNotifications,
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Try again'),
-                ),
-              ],
-            ),
+          ErrorStateView(
+            message: _errorMessage!,
+            onRetry: _loadNotifications,
           )
         else
           _buildNotificationList(),

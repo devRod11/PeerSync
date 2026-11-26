@@ -1,12 +1,22 @@
+import logging
 from datetime import datetime, timezone
 from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field, field_validator
 from google.cloud.firestore_v1.base_query import FieldFilter
+from pydantic import BaseModel, Field, field_validator
+
 from app.database.firebase import get_firestore_client
-from app.dependencies.auth import get_current_user, require_professor
-from app.services.notification_service import (create_task_assignment_notifications)
+from app.dependencies.auth import get_current_user
+from app.services.notification_service import create_task_assignment_notifications
+from app.services.push_service import send_task_assignment_push
 from app.services.task_status_service import recalculate_task_status
+from app.services.calendar_sync_service import (
+    sync_resource_calendar_events,
+    delete_resource_calendar_events,
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
 
@@ -322,6 +332,45 @@ def format_task(doc):
     data["id"] = doc.id
     return data
 
+def sync_task_calendar_safely(task_id: str, task: dict):
+    """Synchronize task events without interrupting task operations."""
+
+    try:
+        sync_resource_calendar_events(
+            resource_type="task",
+            resource_id=task_id,
+            student_uids=task.get("assignedTo", []),
+            title=task.get("title", "Untitled Task"),
+            description=task.get("description", ""),
+            due_date=task.get("dueDate"),
+            metadata={
+                "Priority": task.get("priority"),
+                "Status": task.get("status"),
+            },
+        )
+
+    except Exception:
+        logger.exception(
+            "Unable to synchronize Google Calendar for task %s.",
+            task_id,
+        )
+
+
+def delete_task_calendar_safely(task_id: str):
+    """Delete task calendar events without interrupting task deletion."""
+
+    try:
+        delete_resource_calendar_events(
+            resource_type="task",
+            resource_id=task_id,
+        )
+
+    except Exception:
+        logger.exception(
+            "Unable to delete Google Calendar events for task %s.",
+            task_id,
+        )
+
 @router.post("/", status_code=201)
 def create_task(
     task_data: TaskCreate,
@@ -400,8 +449,19 @@ def create_task(
 
     doc_ref = db.collection("tasks").document()
     doc_ref.set(task)
+    sync_task_calendar_safely(
+        task_id=doc_ref.id,
+        task=task,
+    )
 
     create_task_assignment_notifications(
+        db=db,
+        task_id=doc_ref.id,
+        assigned_to=task_data.assignedTo,
+        task_title=task_data.title
+    )
+
+    send_task_assignment_push(
         db=db,
         task_id=doc_ref.id,
         assigned_to=task_data.assignedTo,
@@ -562,6 +622,16 @@ def update_task(
 
     # Save task updates first
     task_ref.update(updates)
+    updated_task_data = {
+        **task,
+        **updates,
+    }
+
+    sync_task_calendar_safely(
+        task_id=task_id,
+        task=updated_task_data,
+    )
+
     if "assignedTo" in updates:
         recalculate_task_status(
             db,
@@ -571,6 +641,16 @@ def update_task(
     # Notify only newly assigned students
     if newly_assigned:
         create_task_assignment_notifications(
+            db=db,
+            task_id=task_id,
+            assigned_to=newly_assigned,
+            task_title=updates.get(
+                "title",
+                task.get("title", "Untitled Task")
+            )
+        )
+
+        send_task_assignment_push(
             db=db,
             task_id=task_id,
             assigned_to=newly_assigned,
@@ -639,6 +719,7 @@ def delete_task(
         )
 
     task_ref.delete()
+    delete_task_calendar_safely(task_id)
 
     return {
         "message": "Task deleted successfully.",

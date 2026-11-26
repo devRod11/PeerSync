@@ -1,0 +1,13 @@
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+# Correctness and import hygiene only. Formatting-only rules (UP, etc.) are
+# intentionally left out so the diff stays focused on behaviour.
+select = ["E", "F", "I", "B", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+# FastAPI's dependency-injection idiom uses function calls in argument
+# defaults; B008 is a false positive for this framework.
+"app/**/*.py" = ["B008"]

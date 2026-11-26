@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
-import '../widgets/shared_widgets.dart';
-import '../services/api_service.dart';
+
+import '../core/a11y/app_a11y.dart';
+import '../core/utils/error_messages.dart';
 import '../models/announcement.dart';
-import '../models/project.dart';
 import '../models/group.dart';
+import '../models/project.dart';
+import '../services/api_service.dart';
+import '../theme/app_colors.dart';
+import '../widgets/shared_widgets.dart';
 
 class AnnouncementsManagement extends StatefulWidget {
   const AnnouncementsManagement({super.key});
@@ -65,7 +69,7 @@ class _AnnouncementsManagementState
       if (!mounted) return;
 
       setState(() {
-        errorMessage = e.toString();
+        errorMessage = friendlyErrorMessage(e);
         isLoading = false;
       });
     }
@@ -95,7 +99,7 @@ class _AnnouncementsManagementState
       if (!mounted) return;
 
       setState(() {
-        errorMessage = e.toString();
+        errorMessage = friendlyErrorMessage(e);
         isLoading = false;
       });
     }
@@ -145,30 +149,14 @@ class _AnnouncementsManagementState
 
   // Confirm and delete an announcement.
   Future<void> _confirmDelete(Announcement announcement) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete announcement?'),
-        content: Text(
-          'Are you sure you want to delete "${announcement.title}"?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.red,
-            ),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Delete announcement?',
+      message: 'Are you sure you want to delete "${announcement.title}"? '
+          'This action cannot be undone.',
     );
 
-    if (confirmed != true) return;
+    if (!confirmed) return;
 
     try {
       await ApiService.deleteAnnouncement(announcement.id);
@@ -179,23 +167,11 @@ class _AnnouncementsManagementState
       await _loadAnnouncements();
     } catch (e) {
       if (!mounted) return;
-      _showMessage(e.toString());
+      _showMessage(friendlyErrorMessage(e));
     }
   }
 
-  String _formatDate(DateTime? date) {
-    if (date == null) return 'Date unavailable';
-
-    final localDate = date.toLocal();
-
-    const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-    ];
-
-    return '${months[localDate.month - 1]} '
-        '${localDate.day}, ${localDate.year}';
-  }
+  String _formatDate(DateTime? date) => AppA11y.formatDate(date);
 
   String _audienceLabel(Announcement announcement) {
     if (announcement.targetType == 'project') {
@@ -348,19 +324,14 @@ class _AnnouncementsManagementState
         ),
 
         if (isLoading)
-          const Padding(
-            padding: EdgeInsets.all(30),
-            child: Center(
-              child: CircularProgressIndicator(),
-            ),
-          )
+          const LoadingView(message: 'Loading announcements\u2026')
         else if (errorMessage != null)
           InfoCard(
             child: Column(
               children: [
                 const Icon(
                   Icons.error_outline,
-                  color: Colors.red,
+                  color: AppColors.danger,
                   size: 32,
                 ),
                 const SizedBox(height: 8),
@@ -389,7 +360,7 @@ class _AnnouncementsManagementState
                 Icon(
                   Icons.campaign_outlined,
                   size: 38,
-                  color: Colors.grey,
+                  color: AppColors.textMuted,
                 ),
                 SizedBox(height: 8),
                 Text(
@@ -530,7 +501,7 @@ class _AnnouncementDialogState extends State<_AnnouncementDialog> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(e.toString()),
+          content: Text(friendlyErrorMessage(e)),
         ),
       );
     }
@@ -640,7 +611,7 @@ class _AnnouncementDialogState extends State<_AnnouncementDialog> {
                   if (availableGroups.isEmpty)
                     const Text(
                       'No groups are available for this project.',
-                      style: TextStyle(color: Colors.grey),
+                      style: TextStyle(color: AppColors.textMuted),
                     )
                   else
                     Container(

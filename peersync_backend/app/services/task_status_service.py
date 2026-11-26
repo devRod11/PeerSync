@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 
+
 def get_submission_timestamp(submission: dict) -> float:
     """
     Convert submittedAt into a comparable timestamp.
@@ -66,10 +67,7 @@ def recalculate_task_status(db, task_id: str):
             }
 
     # Determine the new task status.
-    if not assigned_students:
-        new_status = "pending"
-
-    elif not latest_submissions:
+    if not assigned_students or not latest_submissions:
         new_status = "pending"
 
     elif all(

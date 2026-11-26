@@ -1,10 +1,11 @@
-from fastapi import Depends, HTTPException, status
+import logging
+
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from firebase_admin import auth
-from app.database.firebase import initialize_firebase, get_firestore_client
-
-
-# Extract the Bearer token from the Authorization header.
+from app.database.firebase import get_firestore_client, initialize_firebase
+from app.services.professor_session_service import (validate_professor_session,)
+logger = logging.getLogger("peersync.auth")
 bearer_scheme = HTTPBearer(auto_error=False)
 
 
@@ -12,11 +13,9 @@ def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme)
 ):
     """
-    Verify the Firebase ID token and retrieve the
-    authenticated user's Firestore profile.
+    Verify Firebase authentication and retrieve the user's Firestore profile.
     """
 
-    # 1. Check whether an Authorization header exists.
     if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -24,7 +23,6 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # 2. Verify the Firebase ID token.
     try:
         initialize_firebase()
 
@@ -36,23 +34,20 @@ def get_current_user(
         uid = decoded_token.get("uid")
 
         if not uid:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid authentication token."
-            )
+            raise ValueError("Missing Firebase UID.")
 
-    except Exception as error:
-        print("FIREBASE TOKEN VERIFICATION FAILED")
-        print("Error type:", type(error).__name__)
-        print("Error details:", str(error))
+    except Exception:
+        logger.warning(
+            "Firebase ID token verification failed.",
+            exc_info=True
+        )
 
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired authentication token.",
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        ) from None
 
-    # 3. Retrieve the user's profile from Firestore.
     try:
         db = get_firestore_client()
 
@@ -62,15 +57,14 @@ def get_current_user(
             .get()
         )
 
-    except Exception as error:
-        print(f"Firestore user lookup failed: {error}")
+    except Exception:
+        logger.exception("Firestore user lookup failed.")
 
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Unable to verify user profile."
-        )
+        ) from None
 
-    # 4. Check whether the user profile exists.
     if not user_document.exists:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -79,14 +73,12 @@ def get_current_user(
 
     user_data = user_document.to_dict() or {}
 
-    # 5. Check account activity.
     if user_data.get("isActive") is not True:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="This account is inactive."
         )
 
-    # 6. Validate the user's application role.
     role = str(user_data.get("role", "")).strip().lower()
 
     if role not in ["professor", "student"]:
@@ -95,7 +87,6 @@ def get_current_user(
             detail="User role is not authorized."
         )
 
-    # 7. Return authenticated user information.
     return {
         "uid": uid,
         "displayName": user_data.get("displayName"),
@@ -105,17 +96,54 @@ def get_current_user(
     }
 
 
-def require_professor(
+def require_professor_identity(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Allow access only to authenticated Professors.
+    Verify Professor identity without requiring OTP verification.
+
+    Use only for the Professor OTP request and verification endpoints.
     """
 
     if current_user["role"] != "professor":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Professor access required."
+        )
+
+    return current_user
+
+
+def require_professor(
+    current_user: dict = Depends(require_professor_identity),
+    professor_session: str | None = Header(
+        default=None,
+        alias="X-Professor-OTP-Session"
+    )
+):
+    """
+    Require both Firebase Professor authentication
+    and a valid OTP-verified Professor session.
+    """
+
+    try:
+        session_valid = validate_professor_session(
+            uid=current_user["uid"],
+            session_token=professor_session
+        )
+
+    except Exception:
+        logger.exception("Professor session validation failed.")
+
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unable to verify Professor session."
+        ) from None
+
+    if not session_valid:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Professor OTP verification is required."
         )
 
     return current_user

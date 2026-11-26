@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../core/utils/error_messages.dart';
 import '../models/group.dart';
 import '../services/api_service.dart';
+import '../theme/app_colors.dart';
 import '../widgets/shared_widgets.dart';
 
 class MyClassesPage extends StatefulWidget {
@@ -43,7 +45,7 @@ class _MyClassesPageState extends State<MyClassesPage> {
       if (!mounted) return;
 
       setState(() {
-        _errorMessage = e.toString();
+        _errorMessage = friendlyErrorMessage(e);
         _isLoading = false;
       });
     }
@@ -109,8 +111,8 @@ class _MyClassesPageState extends State<MyClassesPage> {
                 Icons.star_outline,
                 size: 18,
                 color: isLeaderAssigned
-                    ? Colors.amber.shade800
-                    : Colors.grey,
+                    ? AppColors.warning
+                    : AppColors.textMuted,
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -180,7 +182,7 @@ class _MyClassesPageState extends State<MyClassesPage> {
                     contentPadding: EdgeInsets.zero,
                     leading: Icon(
                       isLeader ? Icons.star : Icons.person_outline,
-                      color: isLeader ? Colors.amber.shade800 : null,
+                      color: isLeader ? AppColors.warning : null,
                     ),
                     title: Text(member.displayName),
                     subtitle: Text(
@@ -281,40 +283,17 @@ class _MyClassesPageState extends State<MyClassesPage> {
           ],
         ),
 
-        SectionHeading(
+        const SectionHeading(
           'My groups',
           action: 'Refresh',
         ),
 
         if (_isLoading)
-          const Padding(
-            padding: EdgeInsets.all(24),
-            child: Center(
-              child: CircularProgressIndicator(),
-            ),
-          )
+          const LoadingView(message: 'Loading your classes…')
         else if (_errorMessage != null)
-          InfoCard(
-            child: Column(
-              children: [
-                const Icon(
-                  Icons.error_outline,
-                  color: Colors.red,
-                  size: 36,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  _errorMessage!,
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 12),
-                OutlinedButton.icon(
-                  onPressed: _loadGroups,
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Try again'),
-                ),
-              ],
-            ),
+          ErrorStateView(
+            message: _errorMessage!,
+            onRetry: _loadGroups,
           )
         else if (_groups.isEmpty)
           const InfoCard(
@@ -351,7 +330,17 @@ class _MyClassesPageState extends State<MyClassesPage> {
 
         PrimaryButton(
           label: '＋ Submit team update',
-          onPressed: () {},
+          onPressed: () {
+            ScaffoldMessenger.of(context)
+              ..hideCurrentSnackBar()
+              ..showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Team updates are submitted from the Activities tab.',
+                  ),
+                ),
+              );
+          },
         ),
       ],
     );
