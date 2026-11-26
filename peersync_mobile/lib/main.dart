@@ -780,11 +780,27 @@ class _PeerSyncShellState extends State<PeerSyncShell>
 
     final uid = FirebaseAuth.instance.currentUser?.uid;
 
-    // Stop this device receiving the signed-out user's pushes, and remove
-    // their cached data from a possibly shared machine.
-    await PushNotificationService.unregister(role: role);
-    await OfflineCache.clearForUser(uid);
-    await FirebaseAuth.instance.signOut();
+    try {
+      // Unregister this device from the signed-in user's push notifications.
+      await PushNotificationService.unregister(role: role);
+
+      // Remove cached data from a possibly shared device.
+      await OfflineCache.clearForUser(uid);
+    } finally {
+      try {
+        // Revoke the Professor's OTP session on the backend.
+        if (role == 'Professor') {
+          await ApiService.logoutProfessorSession();
+        }
+      } catch (_) {
+        // Ensure the locally stored session token is cleared
+        // even if the backend is temporarily unavailable.
+        await ApiService.clearProfessorSession();
+      } finally {
+        // Always sign out of Firebase.
+        await FirebaseAuth.instance.signOut();
+      }
+    }
   }
 
   Widget _bottomNav(
