@@ -17,5 +17,5 @@ jobs:
         run: |
           curl --fail --silent --show-error \
             --request POST \
-            "${PEERSYNC_API_URL}/internal/email-digests/process" \
+            "${PEERSYNC_API_URL/}/internal/email-digests/process" \
             --header "X-Email-Digest-Secret: ${EMAIL_DIGEST_CRON_SECRET}"
