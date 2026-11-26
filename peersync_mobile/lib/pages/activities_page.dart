@@ -1,4 +1,6 @@
+import 'package:file_picker/file_picker.dart' as file_picker;
 import 'package:flutter/material.dart';
+
 
 import '../core/a11y/app_a11y.dart';
 import '../core/a11y/status_presentation.dart';
@@ -12,6 +14,7 @@ import '../models/task.dart';
 import '../services/api_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/shared_widgets.dart';
+
 
 class ActivitiesPage extends StatefulWidget {
   final AuthenticatedUser user;
@@ -755,35 +758,92 @@ class _SubmissionDialog extends StatefulWidget {
       _SubmissionDialogState();
 }
 
-class _SubmissionDialogState extends State<_SubmissionDialog> {
-  late final TextEditingController fileNameController;
-  late final TextEditingController fileTypeController;
 
+class _SubmissionDialogState extends State<_SubmissionDialog> {
+  file_picker.PlatformFile? selectedFile;
   bool isSaving = false;
 
-  @override
-  void initState() {
-    super.initState();
+  static const int maxFileSize = 25 * 1024 * 1024;
 
-    fileNameController = TextEditingController();
-    fileTypeController = TextEditingController();
+  static const List<String> allowedExtensions = [
+    'pdf',
+    'doc',
+    'docx',
+    'ppt',
+    'pptx',
+    'xls',
+    'xlsx',
+    'txt',
+    'csv',
+    'zip',
+  ];
+
+  Future<void> _pickFile() async {
+    try {
+      final result = await file_picker.FilePicker.pickFiles(
+        type: file_picker.FileType.custom,
+        allowedExtensions: allowedExtensions,
+      );
+
+      if (result.isEmpty) return;
+
+      final file = result.single;
+      final fileSize = await file.length();
+
+      if (fileSize == null) {
+        if (!mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Unable to determine the selected file size.'),
+          ),
+        );
+        return;
+      }
+
+      if (fileSize > maxFileSize) {
+        if (!mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('File size exceeds the 25 MB upload limit.'),
+          ),
+        );
+        return;
+      }
+
+      setState(() {
+        selectedFile = file;
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Unable to select file: $e'),
+        ),
+      );
+    }
   }
 
-  @override
-  void dispose() {
-    fileNameController.dispose();
-    fileTypeController.dispose();
-    super.dispose();
+  String _formatFileSize(int? bytes) {
+    if (bytes == null) return 'File size unavailable';
+    if (bytes < 1024) return '$bytes B';
+
+    if (bytes < 1024 * 1024) {
+      return '${(bytes / 1024).toStringAsFixed(2)} KB';
+    }
+
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(2)} MB';
   }
 
   Future<void> _submit() async {
-    final fileName = fileNameController.text.trim();
-    final fileType = fileTypeController.text.trim();
+    final file = selectedFile;
 
-    if (fileName.isEmpty || fileType.isEmpty) {
+    if (file == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please enter the filename and file type.'),
+          content: Text('Please select a file first.'),
         ),
       );
       return;
@@ -794,12 +854,14 @@ class _SubmissionDialogState extends State<_SubmissionDialog> {
     });
 
     try {
-      await ApiService.createSubmission(
+      final fileBytes = await file.readAsBytes();
+
+      await ApiService.uploadSubmission(
         projectID: widget.task.projectID,
         groupID: widget.task.groupID,
         taskID: widget.task.id,
-        fileName: fileName,
-        fileType: fileType,
+        fileName: file.name,
+        fileBytes: fileBytes,
       );
 
       if (!mounted) return;
@@ -814,7 +876,7 @@ class _SubmissionDialogState extends State<_SubmissionDialog> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Unable to record submission: $error'),
+          content: Text('Unable to upload submission: $error'),
         ),
       );
     }
@@ -822,58 +884,39 @@ class _SubmissionDialogState extends State<_SubmissionDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final latestSubmissionNote =
-        'Task: ${widget.task.title}';
-
     return AlertDialog(
       title: const Text('Submit Task'),
       content: SizedBox(
         width: 420,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                latestSubmissionNote,
-                style: titleStyle,
-              ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Task: ${widget.task.title}',
+              style: titleStyle,
+            ),
 
-              const SizedBox(height: 8),
+            const SizedBox(height: 12),
 
-              const Text(
-                'Enter the details of your document below. '
-                'The actual document upload will be available '
-                'when Google Drive integration is implemented.',
-                style: subStyle,
-              ),
+            const Text(
+              'Select the document you want to submit. '
+              'Supported formats include PDF, Word, PowerPoint, '
+              'Excel, TXT, CSV, and ZIP.',
+              style: subStyle,
+            ),
 
-              const SizedBox(height: 18),
+            const SizedBox(height: 18),
 
-              const FieldLabel('Filename'),
+            OutlinedButton.icon(
+              onPressed: isSaving ? null : _pickFile,
+              icon: const Icon(Icons.folder_open_outlined),
+              label: const Text('Choose File'),
+            ),
 
-              TextField(
-                controller: fileNameController,
-                enabled: !isSaving,
-                decoration: const InputDecoration(
-                  hintText: 'e.g. Chapter1_Introduction',
-                  prefixIcon: Icon(Icons.description_outlined),
-                ),
-              ),
+            const SizedBox(height: 12),
 
-              const FieldLabel('File type'),
-
-              TextField(
-                controller: fileTypeController,
-                enabled: !isSaving,
-                decoration: const InputDecoration(
-                  hintText: 'e.g. PDF, DOCX, PPTX',
-                  prefixIcon: Icon(Icons.insert_drive_file_outlined),
-                ),
-              ),
-
-              const SizedBox(height: 14),
-
+            if (selectedFile != null)
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(12),
@@ -883,23 +926,63 @@ class _SubmissionDialogState extends State<_SubmissionDialog> {
                       .surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Row(
                   children: [
-                    Icon(Icons.info_outline, size: 18),
-                    SizedBox(width: 8),
+                    const Icon(
+                      Icons.insert_drive_file_outlined,
+                      size: 28,
+                    ),
+                    const SizedBox(width: 10),
                     Expanded(
-                      child: Text(
-                        'This records your submission details only. '
-                        'No document is uploaded or stored yet.',
-                        style: subStyle,
+                      child: Column(
+                        crossAxisAlignment:
+                            CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            selectedFile!.name,
+                            style: titleStyle,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _formatFileSize(selectedFile!.lengthSync()),
+                            style: subStyle,
+                          ),
+                        ],
                       ),
+                    ),
+                    IconButton(
+                      tooltip: 'Remove selected file',
+                      onPressed: isSaving
+                          ? null
+                          : () {
+                              setState(() {
+                                selectedFile = null;
+                              });
+                            },
+                      icon: const Icon(Icons.close),
                     ),
                   ],
                 ),
               ),
+
+            const SizedBox(height: 12),
+
+            const Text(
+              'Maximum file size: 25 MB',
+              style: subStyle,
+            ),
+
+            if (isSaving) ...[
+              const SizedBox(height: 16),
+              const LinearProgressIndicator(),
+              const SizedBox(height: 8),
+              const Text(
+                'Uploading your submission...',
+                style: subStyle,
+              ),
             ],
-          ),
+          ],
         ),
       ),
       actions: [
@@ -910,7 +993,9 @@ class _SubmissionDialogState extends State<_SubmissionDialog> {
           child: const Text('Cancel'),
         ),
         FilledButton.icon(
-          onPressed: isSaving ? null : _submit,
+          onPressed: isSaving || selectedFile == null
+              ? null
+              : _submit,
           icon: isSaving
               ? const SizedBox(
                   width: 16,
@@ -919,9 +1004,9 @@ class _SubmissionDialogState extends State<_SubmissionDialog> {
                     strokeWidth: 2,
                   ),
                 )
-              : const Icon(Icons.check),
+              : const Icon(Icons.cloud_upload_outlined),
           label: Text(
-            isSaving ? 'Submitting...' : 'Submit',
+            isSaving ? 'Uploading...' : 'Upload Submission',
           ),
         ),
       ],

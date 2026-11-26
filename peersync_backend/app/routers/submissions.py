@@ -2,7 +2,9 @@ from datetime import datetime, timezone
 from typing import Optional
 import io
 import os
+from urllib.parse import quote
 
+from fastapi.responses import Response
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi import File, Form, UploadFile
 from google.cloud.firestore_v1.base_query import FieldFilter
@@ -14,6 +16,7 @@ from app.services.task_status_service import recalculate_task_status
 from app.integrations.google_drive import (
     GoogleDriveOAuthError,
     upload_drive_file,
+    download_drive_file,
     delete_drive_file,
 )
 
@@ -675,6 +678,81 @@ def get_submission(
             submission
         )
     }
+
+@router.get("/{submission_id}/download")
+def download_submission(
+    submission_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    db = get_db()
+
+    user_id = get_user_id(current_user)
+    role = get_user_role(current_user)
+
+    # Only professors can download submissions through this endpoint.
+    if role != "professor":
+        raise HTTPException(
+            status_code=403,
+            detail="Only professors can download student submissions."
+        )
+
+    # Retrieve the submission from Firestore.
+    _, submission = get_submission_or_404(
+        db,
+        submission_id
+    )
+
+    # Verify that the professor owns the associated project.
+    verify_professor_project_access(
+        db,
+        submission["projectID"],
+        user_id
+    )
+
+    # Retrieve the Drive ID from trusted Firestore metadata.
+    drive_file_id = submission.get("driveFileId")
+
+    if not drive_file_id:
+        raise HTTPException(
+            status_code=409,
+            detail="This submission does not have an uploaded file."
+        )
+
+    # Retrieve the actual file from Google Drive.
+    try:
+        drive_file = download_drive_file(drive_file_id)
+
+    except GoogleDriveOAuthError:
+        raise HTTPException(
+            status_code=503,
+            detail="Unable to download the file from Google Drive."
+        ) from None
+
+    file_name = drive_file.get("fileName") or "submission"
+    mime_type = (
+        drive_file.get("mimeType")
+        or "application/octet-stream"
+    )
+    file_content = drive_file.get("content")
+
+    if file_content is None:
+        raise HTTPException(
+            status_code=502,
+            detail="Google Drive returned an empty file response."
+        )
+
+    # Return the file as a downloadable response.
+    return Response(
+        content=file_content,
+        media_type=mime_type,
+        headers={
+            "Content-Disposition": (
+                f"attachment; filename*=UTF-8''{quote(file_name)}"
+            ),
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        }
+    )
 
 @router.patch("/{submission_id}/review")
 def review_submission(

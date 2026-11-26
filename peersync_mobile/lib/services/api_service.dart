@@ -863,6 +863,79 @@ class ApiService {
     );
   }
 
+
+  // Upload an actual submission file to the FastAPI backend.
+  static Future<Submission> uploadSubmission({
+    required String projectID,
+    required String groupID,
+    required String taskID,
+    required String fileName,
+    required List<int> fileBytes,
+  }) async {
+    const maxUploadSize = 25 * 1024 * 1024;
+
+    if (fileBytes.isEmpty) {
+      throw Exception('The selected file is empty.');
+    }
+
+    if (fileBytes.length > maxUploadSize) {
+      throw Exception('File size exceeds the 25 MB limit.');
+    }
+
+    final idToken = await _getIdToken();
+
+    final uri = Uri.parse('${ApiConfig.submissions}upload');
+
+    final request = http.MultipartRequest('POST', uri);
+
+    request.headers.addAll({
+      'Authorization': 'Bearer $idToken',
+      'Accept': 'application/json',
+    });
+
+    request.fields.addAll({
+      'projectID': projectID,
+      'groupID': groupID,
+      'taskID': taskID,
+    });
+
+    request.files.add(
+      http.MultipartFile.fromBytes(
+        'file',
+        fileBytes,
+        filename: fileName,
+      ),
+    );
+
+    try {
+      final streamedResponse = await request.send().timeout(
+        const Duration(seconds: 120),
+      );
+
+      final response = await http.Response.fromStream(
+        streamedResponse,
+      );
+
+      final responseData = _handleResponse(response);
+
+      if (responseData is! Map<String, dynamic> ||
+          responseData['submission'] is! Map) {
+        throw Exception('Invalid submission upload response.');
+      }
+
+      return Submission.fromJson(
+        Map<String, dynamic>.from(
+          responseData['submission'],
+        ),
+      );
+    } on TimeoutException {
+      throw Exception(
+        'File upload timed out. Please check your connection and try again.',
+      );
+    }
+  }
+
+
   // Retrieve submissions accessible to the authenticated user.
   // Optional filters: projectID, groupID, and taskID.
   static Future<List<Submission>> getSubmissions({
@@ -939,6 +1012,48 @@ class ApiService {
   // Delete a student's own pending submission.
   static Future<void> deleteSubmission(String submissionId) async {
     await delete('${ApiConfig.submissions}$submissionId');
+  }
+
+    // Download a submission file through the authenticated FastAPI backend.
+  // The backend retrieves the actual file from Google Drive.
+  static Future<http.Response> downloadSubmission({
+    required String submissionId,
+  }) async {
+    final idToken = await _getIdToken();
+
+    final uri = Uri.parse(
+      '${ApiConfig.submissions}$submissionId/download',
+    );
+
+    try {
+      final response = await http.get(
+        uri,
+        headers: {
+          'Authorization': 'Bearer $idToken',
+          'Accept': '*/*',
+        },
+      ).timeout(const Duration(seconds: 120));
+
+      // Reuse the existing API error handling for unsuccessful responses.
+      if (response.statusCode < 200 ||
+          response.statusCode >= 300) {
+        _handleResponse(response);
+      }
+
+      if (response.bodyBytes.isEmpty) {
+        throw Exception('The downloaded file is empty.');
+      }
+
+      return response;
+    } on TimeoutException {
+      throw Exception(
+        'File download timed out. Please check your connection and try again.',
+      );
+    } on http.ClientException {
+      throw Exception(
+        'Unable to connect to the server. Check your connection and backend.',
+      );
+    }
   }
 
 

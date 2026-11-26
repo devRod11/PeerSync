@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart' as file_picker;
 import 'package:flutter/material.dart';
 
 import '../core/a11y/app_a11y.dart';
@@ -258,6 +259,16 @@ class _ProgressMonitoringState extends State<ProgressMonitoring> {
                 const SizedBox(height: 5),
                 Text(submission.feedback!, style: subStyle),
               ],
+              const SizedBox(height: 8),
+
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () => _downloadSubmission(submission),
+                  icon: const Icon(Icons.download_outlined),
+                  label: const Text('Download file'),
+                ),
+              ),
 
               if (status == 'pending') ...[
                 const SizedBox(height: 14),
@@ -276,6 +287,51 @@ class _ProgressMonitoringState extends State<ProgressMonitoring> {
       }).toList(),
     );
   }
+
+  Future<void> _downloadSubmission(Submission submission) async {
+  try {
+    final response = await ApiService.downloadSubmission(
+      submissionId: submission.id,
+    );
+
+    final contentType =
+        response.headers['content-type'] ?? 'application/octet-stream';
+
+    final savedFile = await file_picker.FilePicker.saveFile(
+      fileName: submission.fileName,
+      bytes: response.bodyBytes,
+      mimeType: contentType.split(';').first.trim(),
+      dialogTitle: 'Save student submission',
+    );
+
+    if (!mounted) return;
+
+    if (savedFile == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Download cancelled.'),
+        ),
+      );
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'File download started: ${submission.fileName}',
+        ),
+      ),
+    );
+  } catch (e) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Unable to download submission: $e'),
+      ),
+    );
+  }
+}
 
   Future<void> _reviewSubmission(Submission submission) async {
     final result = await showDialog<Map<String, String?>>(
