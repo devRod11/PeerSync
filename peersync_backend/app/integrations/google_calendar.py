@@ -370,7 +370,7 @@ def get_google_calendar_status(student_uid):
     return {
         "connected": token_doc.exists,
         "provider": "google_calendar",
-    }
+    }   
 
 def disconnect_google_calendar(student_uid):
     """

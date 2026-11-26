@@ -22,6 +22,12 @@ class Settings(BaseSettings):
     google_calendar_redirect_uri: str | None = None
     google_calendar_token_encryption_key: str | None = None
 
+    professor_otp_hash_secret: str | None = None
+    sendgrid_api_key: str | None = None
+    sendgrid_from_email: str | None = None
+    professor_otp_expire_minutes: int = 5
+    professor_otp_max_attempts: int = 5
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [

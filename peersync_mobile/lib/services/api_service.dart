@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show ValueNotifier;
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 
 import '../config/api_config.dart';
@@ -28,10 +29,32 @@ class ApiException implements Exception {
 }
 
 class ApiService {
-  // Request timeout
+  // Secure storage for the Professor OTP session token.
+  static const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
+
+  static const String _professorSessionKey = 'professor_otp_session';
+
+  // Save the verified Professor session token.
+  static Future<void> saveProfessorSession(String token) async {
+    if (token.isEmpty) {
+      throw Exception('Professor session token cannot be empty.');
+    }
+
+    await _secureStorage.write(key: _professorSessionKey, value: token);
+  }
+
+  // Retrieve the stored Professor session token.
+  static Future<String?> getProfessorSession() async {
+    return _secureStorage.read(key: _professorSessionKey);
+  }
+
+  // Remove the stored Professor session token.
+  static Future<void> clearProfessorSession() async {
+    await _secureStorage.delete(key: _professorSessionKey);
+  }
+
   static const Duration _timeout = Duration(seconds: 30);
 
-  // Retrieves the Firebase ID token of the currently logged-in user.
   static Future<String> _getIdToken() async {
     final user = FirebaseAuth.instance.currentUser;
 
@@ -51,12 +74,20 @@ class ApiService {
   // Generates headers for authenticated API requests.
   static Future<Map<String, String>> _getHeaders() async {
     final idToken = await _getIdToken();
+    final professorSession = await getProfessorSession();
 
-    return {
+    final headers = <String, String>{
       'Authorization': 'Bearer $idToken',
       'Content-Type': 'application/json',
       'Accept': 'application/json',
     };
+
+    // Attach the additional session token when one exists.
+    if (professorSession != null && professorSession.isNotEmpty) {
+      headers['X-Professor-OTP-Session'] = professorSession;
+    }
+
+    return headers;
   }
 
   // Converts API responses into Dart objects.
@@ -238,12 +269,7 @@ class ApiService {
     Map<String, String>? queryParameters,
     bool cache = true,
   }) async {
-    return _request(
-      'GET',
-      url,
-      queryParameters: queryParameters,
-      cache: cache,
-    );
+    return _request('GET', url, queryParameters: queryParameters, cache: cache);
   }
 
   // Reusable POST request.
@@ -275,6 +301,77 @@ class ApiService {
     return _request('DELETE', url);
   }
 
+  // --------------------------------------------------
+  // Professor OTP Authentication
+  // --------------------------------------------------
+
+  // Request an OTP code through the authenticated Professor account.
+  static Future<Map<String, dynamic>> requestProfessorOtp() async {
+    final response = await post(ApiConfig.professorOtpRequest, body: {});
+
+    if (response is! Map<String, dynamic>) {
+      throw Exception('Invalid Professor OTP request response.');
+    }
+
+    return response;
+  }
+
+  // Verify the OTP code and securely store the returned session token.
+  static Future<Map<String, dynamic>> verifyProfessorOtp(String code) async {
+    final response = await post(
+      ApiConfig.professorOtpVerify,
+      body: {'code': code.trim()},
+    );
+
+    if (response is! Map<String, dynamic>) {
+      throw Exception('Invalid Professor OTP verification response.');
+    }
+
+    if (response['verified'] != true) {
+      throw Exception('Professor OTP verification failed.');
+    }
+
+    final sessionToken = response['sessionToken'];
+
+    if (sessionToken is! String || sessionToken.isEmpty) {
+      throw Exception(
+        'Professor session token was not returned by the server.',
+      );
+    }
+
+    await saveProfessorSession(sessionToken);
+
+    return response;
+  }
+
+  // Revoke the current Professor session on the backend.
+  static Future<void> logoutProfessorSession() async {
+    try {
+      final sessionToken = await getProfessorSession();
+
+      if (sessionToken != null && sessionToken.isNotEmpty) {
+        await post(ApiConfig.professorLogout, body: {});
+      }
+    } finally {
+      await clearProfessorSession();
+    }
+  }
+
+  // Check whether the stored Professor session is still valid.
+  static Future<bool> validateProfessorSession() async {
+    try {
+      await checkProfessorAccess();
+      return true;
+    } on ApiException catch (error) {
+      if (error.statusCode == 401 || error.statusCode == 403) {
+        await clearProfessorSession();
+        return false;
+      }
+
+      rethrow;
+    }
+  }
+
   // Retrieves the currently authenticated user from FastAPI.
   static Future<Map<String, dynamic>> getCurrentUser() async {
     final response = await get(ApiConfig.authMe);
@@ -288,7 +385,7 @@ class ApiService {
 
   // Tests Professor authorization.
   static Future<Map<String, dynamic>> checkProfessorAccess() async {
-    final response = await get(ApiConfig.professorCheck);
+    final response = await get(ApiConfig.professorCheck, cache: false);
 
     if (response is! Map<String, dynamic>) {
       throw Exception('Invalid Professor authorization response.');
@@ -325,16 +422,13 @@ class ApiService {
     return AuthenticatedUser.fromJson(userData);
   }
 
-    // --------------------------------------------------
+  // --------------------------------------------------
   // Google Calendar Integration
   // --------------------------------------------------
 
   // Retrieve the student's Google Calendar connection status.
   static Future<Map<String, dynamic>> getGoogleCalendarStatus() async {
-    final response = await get(
-      ApiConfig.googleCalendarStatus,
-      cache: false,
-    );
+    final response = await get(ApiConfig.googleCalendarStatus, cache: false);
 
     if (response is! Map<String, dynamic>) {
       throw Exception('Invalid Google Calendar status response.');
@@ -345,10 +439,7 @@ class ApiService {
 
   // Generate the Google Calendar OAuth authorization URL.
   static Future<String> getGoogleCalendarAuthorizationUrl() async {
-    final response = await get(
-      ApiConfig.googleCalendarAuthorize,
-      cache: false,
-    );
+    final response = await get(ApiConfig.googleCalendarAuthorize, cache: false);
 
     if (response is! Map<String, dynamic>) {
       throw Exception('Invalid Google Calendar authorization response.');
@@ -365,31 +456,25 @@ class ApiService {
 
   // Synchronize existing tasks and milestones to Google Calendar.
   static Future<Map<String, dynamic>> syncGoogleCalendar() async {
-      final response = await post(
-        ApiConfig.googleCalendarSync,
-        body: {},
-      );
+    final response = await post(ApiConfig.googleCalendarSync, body: {});
 
-      if (response is! Map<String, dynamic>) {
-        throw Exception('Invalid Google Calendar synchronization response.');
-      }
-
-      return response;
+    if (response is! Map<String, dynamic>) {
+      throw Exception('Invalid Google Calendar synchronization response.');
     }
 
-    // Disconnect the student's Google Calendar account.
-    static Future<Map<String, dynamic>> disconnectGoogleCalendar() async {
-      final response = await delete(
-        ApiConfig.googleCalendarDisconnect,
-      );
+    return response;
+  }
 
-      if (response is! Map<String, dynamic>) {
-        throw Exception('Invalid Google Calendar disconnect response.');
-      }
+  // Disconnect the student's Google Calendar account.
+  static Future<Map<String, dynamic>> disconnectGoogleCalendar() async {
+    final response = await delete(ApiConfig.googleCalendarDisconnect);
 
-      return response;
+    if (response is! Map<String, dynamic>) {
+      throw Exception('Invalid Google Calendar disconnect response.');
     }
 
+    return response;
+  }
 
   // Retrieve all groups accessible to the authenticated user.
   static Future<List<Group>> getGroups() async {
@@ -411,12 +496,12 @@ class ApiService {
         .toList();
   }
 
-  static Future<List<StudentOption>> getAvailableStudents({ required String projectID,}) async {
+  static Future<List<StudentOption>> getAvailableStudents({
+    required String projectID,
+  }) async {
     final response = await get(
       '${ApiConfig.groups}available-students',
-      queryParameters: {
-        'projectID': projectID,
-      },
+      queryParameters: {'projectID': projectID},
     );
 
     if (response is! Map<String, dynamic>) {
@@ -434,9 +519,7 @@ class ApiService {
         throw Exception('Invalid student record.');
       }
 
-      return StudentOption.fromJson(
-        Map<String, dynamic>.from(item),
-      );
+      return StudentOption.fromJson(Map<String, dynamic>.from(item));
     }).toList();
   }
 
@@ -449,9 +532,7 @@ class ApiService {
       throw Exception('Invalid group response.');
     }
 
-    return Group.fromJson(
-      response['group'] as Map<String, dynamic>,
-    );
+    return Group.fromJson(response['group'] as Map<String, dynamic>);
   }
 
   // Create a group.
@@ -476,9 +557,7 @@ class ApiService {
       throw Exception('Invalid group creation response.');
     }
 
-    return Group.fromJson(
-      response['group'] as Map<String, dynamic>,
-    );
+    return Group.fromJson(response['group'] as Map<String, dynamic>);
   }
 
   // Update a group's name.
@@ -496,9 +575,7 @@ class ApiService {
       throw Exception('Invalid group update response.');
     }
 
-    return Group.fromJson(
-      response['group'] as Map<String, dynamic>,
-    );
+    return Group.fromJson(response['group'] as Map<String, dynamic>);
   }
 
   // Add students to a group.
@@ -528,9 +605,7 @@ class ApiService {
     required String groupId,
     required String studentID,
   }) async {
-    return delete(
-      '${ApiConfig.groups}$groupId/members/$studentID',
-    );
+    return delete('${ApiConfig.groups}$groupId/members/$studentID');
   }
 
   // Delete a group.
@@ -644,8 +719,7 @@ class ApiService {
 
     final response = await get(
       ApiConfig.milestones,
-      queryParameters:
-          queryParameters.isEmpty ? null : queryParameters,
+      queryParameters: queryParameters.isEmpty ? null : queryParameters,
     );
 
     if (response is! Map<String, dynamic>) {
@@ -663,17 +737,13 @@ class ApiService {
         throw Exception('Invalid milestone record.');
       }
 
-      return Milestone.fromJson(
-        Map<String, dynamic>.from(item),
-      );
+      return Milestone.fromJson(Map<String, dynamic>.from(item));
     }).toList();
   }
 
   // Retrieve one milestone by its document ID.
   static Future<Milestone> getMilestone(String milestoneId) async {
-    final response = await get(
-      '${ApiConfig.milestones}$milestoneId',
-    );
+    final response = await get('${ApiConfig.milestones}$milestoneId');
 
     if (response is! Map<String, dynamic>) {
       throw Exception('Invalid milestone response.');
@@ -705,19 +775,13 @@ class ApiService {
       status: status,
     );
 
-    final response = await post(
-      ApiConfig.milestones,
-      body: milestone.toJson(),
-    );
+    final response = await post(ApiConfig.milestones, body: milestone.toJson());
 
-    if (response is! Map<String, dynamic> ||
-        response['milestone'] is! Map) {
+    if (response is! Map<String, dynamic> || response['milestone'] is! Map) {
       throw Exception('Invalid milestone creation response.');
     }
 
-    return Milestone.fromJson(
-      Map<String, dynamic>.from(response['milestone']),
-    );
+    return Milestone.fromJson(Map<String, dynamic>.from(response['milestone']));
   }
 
   // Update an existing milestone.
@@ -755,14 +819,11 @@ class ApiService {
       body: body,
     );
 
-    if (response is! Map<String, dynamic> ||
-        response['milestone'] is! Map) {
+    if (response is! Map<String, dynamic> || response['milestone'] is! Map) {
       throw Exception('Invalid milestone update response.');
     }
 
-    return Milestone.fromJson(
-      Map<String, dynamic>.from(response['milestone']),
-    );
+    return Milestone.fromJson(Map<String, dynamic>.from(response['milestone']));
   }
 
   // Delete a milestone.
@@ -792,12 +853,10 @@ class ApiService {
 
     final response = await get(
       ApiConfig.tasks,
-      queryParameters:
-          queryParameters.isEmpty ? null : queryParameters,
+      queryParameters: queryParameters.isEmpty ? null : queryParameters,
     );
 
-    if (response is! Map<String, dynamic> ||
-        response['tasks'] is! List) {
+    if (response is! Map<String, dynamic> || response['tasks'] is! List) {
       throw Exception('Invalid tasks response.');
     }
 
@@ -846,14 +905,11 @@ class ApiService {
       },
     );
 
-    if (response is! Map<String, dynamic> ||
-        response['task'] is! Map) {
+    if (response is! Map<String, dynamic> || response['task'] is! Map) {
       throw Exception('Invalid task creation response.');
     }
 
-    return Task.fromJson(
-      Map<String, dynamic>.from(response['task']),
-    );
+    return Task.fromJson(Map<String, dynamic>.from(response['task']));
   }
 
   // Update task details.
@@ -879,19 +935,13 @@ class ApiService {
       throw Exception('No task fields provided for update.');
     }
 
-    final response = await put(
-      '${ApiConfig.tasks}$taskId',
-      body: body,
-    );
+    final response = await put('${ApiConfig.tasks}$taskId', body: body);
 
-    if (response is! Map<String, dynamic> ||
-        response['task'] is! Map) {
+    if (response is! Map<String, dynamic> || response['task'] is! Map) {
       throw Exception('Invalid task update response.');
     }
 
-    return Task.fromJson(
-      Map<String, dynamic>.from(response['task']),
-    );
+    return Task.fromJson(Map<String, dynamic>.from(response['task']));
   }
 
   // Delete a task.
@@ -918,8 +968,7 @@ class ApiService {
       },
     );
 
-    if (response is! Map<String, dynamic> ||
-        response['submission'] is! Map) {
+    if (response is! Map<String, dynamic> || response['submission'] is! Map) {
       throw Exception('Invalid submission creation response.');
     }
 
@@ -927,7 +976,6 @@ class ApiService {
       Map<String, dynamic>.from(response['submission']),
     );
   }
-
 
   // Upload an actual submission file to the FastAPI backend.
   static Future<Submission> uploadSubmission({
@@ -947,16 +995,11 @@ class ApiService {
       throw Exception('File size exceeds the 25 MB limit.');
     }
 
-    final idToken = await _getIdToken();
-
     final uri = Uri.parse('${ApiConfig.submissions}upload');
-
     final request = http.MultipartRequest('POST', uri);
-
-    request.headers.addAll({
-      'Authorization': 'Bearer $idToken',
-      'Accept': 'application/json',
-    });
+    final headers = await _getHeaders();
+    headers.remove('Content-Type');
+    request.headers.addAll(headers);
 
     request.fields.addAll({
       'projectID': projectID,
@@ -965,11 +1008,7 @@ class ApiService {
     });
 
     request.files.add(
-      http.MultipartFile.fromBytes(
-        'file',
-        fileBytes,
-        filename: fileName,
-      ),
+      http.MultipartFile.fromBytes('file', fileBytes, filename: fileName),
     );
 
     try {
@@ -977,9 +1016,7 @@ class ApiService {
         const Duration(seconds: 120),
       );
 
-      final response = await http.Response.fromStream(
-        streamedResponse,
-      );
+      final response = await http.Response.fromStream(streamedResponse);
 
       final responseData = _handleResponse(response);
 
@@ -989,9 +1026,7 @@ class ApiService {
       }
 
       return Submission.fromJson(
-        Map<String, dynamic>.from(
-          responseData['submission'],
-        ),
+        Map<String, dynamic>.from(responseData['submission']),
       );
     } on TimeoutException {
       throw Exception(
@@ -999,7 +1034,6 @@ class ApiService {
       );
     }
   }
-
 
   // Retrieve submissions accessible to the authenticated user.
   // Optional filters: projectID, groupID, and taskID.
@@ -1024,12 +1058,10 @@ class ApiService {
 
     final response = await get(
       ApiConfig.submissions,
-      queryParameters:
-          queryParameters.isEmpty ? null : queryParameters,
+      queryParameters: queryParameters.isEmpty ? null : queryParameters,
     );
 
-    if (response is! Map<String, dynamic> ||
-        response['submissions'] is! List) {
+    if (response is! Map<String, dynamic> || response['submissions'] is! List) {
       throw Exception('Invalid submissions response.');
     }
 
@@ -1038,9 +1070,7 @@ class ApiService {
         throw Exception('Invalid submission record.');
       }
 
-      return Submission.fromJson(
-        Map<String, dynamic>.from(item),
-      );
+      return Submission.fromJson(Map<String, dynamic>.from(item));
     }).toList();
   }
 
@@ -1060,17 +1090,12 @@ class ApiService {
 
     if (normalizedStatus == 'revision_required' &&
         (feedback == null || feedback.trim().isEmpty)) {
-      throw Exception(
-        'Feedback is required when requesting revisions.',
-      );
+      throw Exception('Feedback is required when requesting revisions.');
     }
 
     await patch(
       '${ApiConfig.submissions}$submissionId/review',
-      body: {
-        'status': normalizedStatus,
-        'feedback': feedback?.trim(),
-      },
+      body: {'status': normalizedStatus, 'feedback': feedback?.trim()},
     );
   }
 
@@ -1079,29 +1104,20 @@ class ApiService {
     await delete('${ApiConfig.submissions}$submissionId');
   }
 
-    // Download a submission file through the authenticated FastAPI backend.
+  // Download a submission file through the authenticated FastAPI backend.
   // The backend retrieves the actual file from Google Drive.
   static Future<http.Response> downloadSubmission({
     required String submissionId,
   }) async {
-    final idToken = await _getIdToken();
-
-    final uri = Uri.parse(
-      '${ApiConfig.submissions}$submissionId/download',
-    );
+    final uri = Uri.parse('${ApiConfig.submissions}$submissionId/download');
 
     try {
-      final response = await http.get(
-        uri,
-        headers: {
-          'Authorization': 'Bearer $idToken',
-          'Accept': '*/*',
-        },
-      ).timeout(const Duration(seconds: 120));
+      final response = await http
+          .get(uri, headers: {...await _getHeaders(), 'Accept': '*/*'})
+          .timeout(const Duration(seconds: 120));
 
       // Reuse the existing API error handling for unsuccessful responses.
-      if (response.statusCode < 200 ||
-          response.statusCode >= 300) {
+      if (response.statusCode < 200 || response.statusCode >= 300) {
         _handleResponse(response);
       }
 
@@ -1121,7 +1137,6 @@ class ApiService {
     }
   }
 
-
   // Retrieve announcements accessible to the authenticated user.
   // Optional filters: projectID and groupID.
   static Future<List<Announcement>> getAnnouncements({
@@ -1140,8 +1155,7 @@ class ApiService {
 
     final response = await get(
       ApiConfig.announcements,
-      queryParameters:
-          queryParameters.isEmpty ? null : queryParameters,
+      queryParameters: queryParameters.isEmpty ? null : queryParameters,
     );
 
     if (response is! Map<String, dynamic> ||
@@ -1154,18 +1168,13 @@ class ApiService {
         throw Exception('Invalid announcement record.');
       }
 
-      return Announcement.fromJson(
-        Map<String, dynamic>.from(item),
-      );
+      return Announcement.fromJson(Map<String, dynamic>.from(item));
     }).toList();
   }
 
-
   // Retrieve notifications belonging to the authenticated user.
   // Optional filter: isRead.
-  static Future<List<AppNotification>> getNotifications({
-    bool? isRead,
-  }) async {
+  static Future<List<AppNotification>> getNotifications({bool? isRead}) async {
     final queryParameters = <String, String>{};
 
     if (isRead != null) {
@@ -1174,8 +1183,7 @@ class ApiService {
 
     final response = await get(
       ApiConfig.notifications,
-      queryParameters:
-          queryParameters.isEmpty ? null : queryParameters,
+      queryParameters: queryParameters.isEmpty ? null : queryParameters,
     );
 
     if (response is! Map<String, dynamic> ||
@@ -1188,9 +1196,7 @@ class ApiService {
         throw Exception('Invalid notification record.');
       }
 
-      return AppNotification.fromJson(
-        Map<String, dynamic>.from(item),
-      );
+      return AppNotification.fromJson(Map<String, dynamic>.from(item));
     }).toList();
   }
 
@@ -1207,32 +1213,19 @@ class ApiService {
 
   // Mark all notifications belonging to the authenticated user as read.
   static Future<void> markAllNotificationsAsRead() async {
-    await patch(
-      '${ApiConfig.notifications}read-all',
-      body: {},
-    );
+    await patch('${ApiConfig.notifications}read-all', body: {});
   }
 
   // Delete an individual notification belonging to the authenticated user.
-  static Future<void> deleteNotification(
-    String notificationId,
-  ) async {
-    await delete(
-      '${ApiConfig.notifications}$notificationId',
-    );
+  static Future<void> deleteNotification(String notificationId) async {
+    await delete('${ApiConfig.notifications}$notificationId');
   }
 
-
   // Retrieve one announcement.
-  static Future<Announcement> getAnnouncement(
-    String announcementId,
-  ) async {
-    final response = await get(
-      '${ApiConfig.announcements}$announcementId',
-    );
+  static Future<Announcement> getAnnouncement(String announcementId) async {
+    final response = await get('${ApiConfig.announcements}$announcementId');
 
-    if (response is! Map<String, dynamic> ||
-        response['announcement'] is! Map) {
+    if (response is! Map<String, dynamic> || response['announcement'] is! Map) {
       throw Exception('Invalid announcement response.');
     }
 
@@ -1252,16 +1245,12 @@ class ApiService {
   }) async {
     final normalizedTarget = targetType.toLowerCase().trim();
 
-    if (normalizedTarget != 'project' &&
-        normalizedTarget != 'group') {
+    if (normalizedTarget != 'project' && normalizedTarget != 'group') {
       throw Exception('Invalid announcement target type.');
     }
 
-    if (normalizedTarget == 'group' &&
-        (groupID == null || groupID.isEmpty)) {
-      throw Exception(
-        'Select at least one group for a group announcement.',
-      );
+    if (normalizedTarget == 'group' && (groupID == null || groupID.isEmpty)) {
+      throw Exception('Select at least one group for a group announcement.');
     }
 
     final response = await post(
@@ -1269,15 +1258,13 @@ class ApiService {
       body: {
         'projectID': projectID,
         'targetType': normalizedTarget,
-        'groupID':
-            normalizedTarget == 'project' ? null : groupID,
+        'groupID': normalizedTarget == 'project' ? null : groupID,
         'title': title.trim(),
         'content': content.trim(),
       },
     );
 
-    if (response is! Map<String, dynamic> ||
-        response['announcement'] is! Map) {
+    if (response is! Map<String, dynamic> || response['announcement'] is! Map) {
       throw Exception('Invalid announcement creation response.');
     }
 
@@ -1298,8 +1285,7 @@ class ApiService {
     if (targetType != null) {
       final normalizedTarget = targetType.toLowerCase().trim();
 
-      if (normalizedTarget != 'project' &&
-          normalizedTarget != 'group') {
+      if (normalizedTarget != 'project' && normalizedTarget != 'group') {
         throw Exception('Invalid announcement target type.');
       }
 
@@ -1324,18 +1310,13 @@ class ApiService {
     }
 
     if (body.isEmpty) {
-      throw Exception(
-        'No announcement fields were provided for update.',
-      );
+      throw Exception('No announcement fields were provided for update.');
     }
 
     // A group-targeted announcement must have at least one group.
     if (body['targetType'] == 'group' &&
-        (body['groupID'] == null ||
-            (body['groupID'] as List).isEmpty)) {
-      throw Exception(
-        'Select at least one group for a group announcement.',
-      );
+        (body['groupID'] == null || (body['groupID'] as List).isEmpty)) {
+      throw Exception('Select at least one group for a group announcement.');
     }
 
     final response = await put(
@@ -1343,8 +1324,7 @@ class ApiService {
       body: body,
     );
 
-    if (response is! Map<String, dynamic> ||
-        response['announcement'] is! Map) {
+    if (response is! Map<String, dynamic> || response['announcement'] is! Map) {
       throw Exception('Invalid announcement update response.');
     }
 
@@ -1354,11 +1334,7 @@ class ApiService {
   }
 
   // Delete an announcement.
-  static Future<void> deleteAnnouncement(
-    String announcementId,
-  ) async {
-    await delete(
-      '${ApiConfig.announcements}$announcementId',
-    );
+  static Future<void> deleteAnnouncement(String announcementId) async {
+    await delete('${ApiConfig.announcements}$announcementId');
   }
 }

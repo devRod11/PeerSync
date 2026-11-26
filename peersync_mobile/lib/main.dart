@@ -3,7 +3,8 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:flutter/foundation.dart' show kIsWeb, ValueListenable, ValueNotifier;
+import 'package:flutter/foundation.dart'
+    show kIsWeb, ValueListenable, ValueNotifier;
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -21,6 +22,7 @@ import 'pages/login_page.dart';
 import 'pages/my_classes_page.dart';
 import 'pages/notifications_page.dart';
 import 'pages/professor_dashboard_page.dart';
+import 'pages/professor_otp_page.dart';
 import 'pages/profile_page.dart';
 import 'pages/progress_monitoring_page.dart';
 import 'pages/student_announcements_page.dart';
@@ -37,9 +39,7 @@ final GlobalKey<ScaffoldMessengerState> peersyncMessengerKey =
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
   // Background/terminated push messages. On web the Firebase SDK delivers
   // these through `firebase-messaging-sw.js`, so the Dart handler is only
@@ -59,12 +59,12 @@ class PeerSyncApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-        title: 'PeerSync',
-        debugShowCheckedModeBanner: false,
-        theme: AppTheme.light,
-        scaffoldMessengerKey: peersyncMessengerKey,
-        home: const AuthGate(),
-      );
+    title: 'PeerSync',
+    debugShowCheckedModeBanner: false,
+    theme: AppTheme.light,
+    scaffoldMessengerKey: peersyncMessengerKey,
+    home: const AuthGate(),
+  );
 }
 
 class AuthGate extends StatefulWidget {
@@ -82,6 +82,9 @@ class _AuthGateState extends State<AuthGate> {
   bool _isLoginInProgress = false;
   bool _loginAttemptFailed = false;
   Future<AuthenticatedUser?>? _profileFuture;
+  String? _professorSessionUid;
+  Future<bool>? _professorSessionFuture;
+  String? _otpVerifiedUid;
 
   @override
   void initState() {
@@ -115,8 +118,7 @@ class _AuthGateState extends State<AuthGate> {
 
   Future<AuthenticatedUser?> _loadUserProfile() async {
     try {
-      final authenticatedUser =
-          await ApiService.getAuthenticatedUser();
+      final authenticatedUser = await ApiService.getAuthenticatedUser();
 
       // Ensure the backend returned the profile belonging
       // to the currently authenticated Firebase account.
@@ -139,6 +141,34 @@ class _AuthGateState extends State<AuthGate> {
 
       rethrow;
     }
+  }
+
+  Future<bool> _getProfessorSessionStatus(User user) {
+    if (_professorSessionUid != user.uid || _professorSessionFuture == null) {
+      _professorSessionUid = user.uid;
+      _professorSessionFuture = ApiService.validateProfessorSession();
+    }
+
+    return _professorSessionFuture!;
+  }
+
+  void _retryProfessorSessionCheck() {
+    setState(() {
+      _professorSessionUid = null;
+      _professorSessionFuture = null;
+    });
+  }
+
+  Future<void> _signOutPendingProfessor() async {
+    try {
+      await ApiService.logoutProfessorSession();
+    } catch (_) {
+      await ApiService.clearProfessorSession();
+    }
+
+    _otpVerifiedUid = null;
+
+    await FirebaseAuth.instance.signOut();
   }
 
   void _retryProfileCheck() {
@@ -191,7 +221,8 @@ class _AuthGateState extends State<AuthGate> {
         if (initializationSnapshot.hasError) {
           return const Scaffold(
             body: ErrorStateView(
-              message: 'Unable to initialize your login session. '
+              message:
+                  'Unable to initialize your login session. '
                   'Please restart the app and try again.',
             ),
           );
@@ -222,7 +253,8 @@ class _AuthGateState extends State<AuthGate> {
         if (authSnapshot.hasError) {
           return const Scaffold(
             body: ErrorStateView(
-              message: 'Unable to check your login session. '
+              message:
+                  'Unable to check your login session. '
                   'Please check your connection and try again.',
             ),
           );
@@ -243,6 +275,10 @@ class _AuthGateState extends State<AuthGate> {
         if (user == null) {
           _profileUid = null;
           _profileFuture = null;
+          _professorSessionUid = null;
+          _professorSessionFuture = null;
+          _otpVerifiedUid = null;
+
           return _loginPage();
         }
 
@@ -251,8 +287,7 @@ class _AuthGateState extends State<AuthGate> {
           key: ValueKey(user.uid),
           future: _getUserProfile(user),
           builder: (context, profileSnapshot) {
-            if (profileSnapshot.connectionState ==
-                ConnectionState.waiting) {
+            if (profileSnapshot.connectionState == ConnectionState.waiting) {
               return const Scaffold(
                 body: LoadingView(message: 'Loading your account…'),
               );
@@ -277,28 +312,75 @@ class _AuthGateState extends State<AuthGate> {
             }
 
             final accountRole = authenticatedUser.role.trim().toLowerCase();
+            if (accountRole == 'professor') {
+              // A successful OTP verification in the current app session
+              // allows the Professor to proceed without another API check.
+              if (_otpVerifiedUid == user.uid) {
+                return PeerSyncShell(
+                  role: 'Professor',
+                  user: authenticatedUser,
+                );
+              }
 
-            return PeerSyncShell(
-              role: accountRole == 'professor' ? 'Professor' : 'Student',
-              user: authenticatedUser,
-            );
+              // Validate the saved Professor OTP session on app startup.
+              return FutureBuilder<bool>(
+                key: ValueKey('professor-session-${user.uid}'),
+                future: _getProfessorSessionStatus(user),
+                builder: (context, sessionSnapshot) {
+                  if (sessionSnapshot.connectionState ==
+                      ConnectionState.waiting) {
+                    return const Scaffold(
+                      body: LoadingView(
+                        message: 'Verifying Professor session…',
+                      ),
+                    );
+                  }
+
+                  if (sessionSnapshot.hasError) {
+                    return Scaffold(
+                      body: ErrorStateView(
+                        message: friendlyErrorMessage(sessionSnapshot.error!),
+                        onRetry: _retryProfessorSessionCheck,
+                      ),
+                    );
+                  }
+
+                  if (sessionSnapshot.data != true) {
+                    return ProfessorOtpPage(
+                      key: ValueKey('professor-otp-${user.uid}'),
+                      onVerified: () {
+                        if (!mounted) return;
+
+                        setState(() {
+                          _otpVerifiedUid = user.uid;
+                        });
+                      },
+                      onSignOut: _signOutPendingProfessor,
+                    );
+                  }
+
+                  return PeerSyncShell(
+                    role: 'Professor',
+                    user: authenticatedUser,
+                  );
+                },
+              );
+            }
+
+            // Students continue directly to their dashboard.
+            return PeerSyncShell(role: 'Student', user: authenticatedUser);
           },
         );
       },
     );
   }
-
 }
 
 class PeerSyncShell extends StatefulWidget {
   final String role;
   final AuthenticatedUser user;
 
-  const PeerSyncShell({
-    super.key,
-    required this.role,
-    required this.user,
-  });
+  const PeerSyncShell({super.key, required this.role, required this.user});
 
   @override
   State<PeerSyncShell> createState() => _PeerSyncShellState();
@@ -306,471 +388,472 @@ class PeerSyncShell extends StatefulWidget {
 
 class _PeerSyncShellState extends State<PeerSyncShell>
     with WidgetsBindingObserver {
-    late int current;
-    late String role;
-    int _unreadNotificationCount = 0;
+  late int current;
+  late String role;
+  int _unreadNotificationCount = 0;
 
-    // Signals NotificationsPage whenever a push message arrives.
-    final ValueNotifier<int> _notificationRefreshSignal =
-        ValueNotifier<int>(0);
+  // Signals NotificationsPage whenever a push message arrives.
+  final ValueNotifier<int> _notificationRefreshSignal = ValueNotifier<int>(0);
 
-    @override
-    void initState() {
-      super.initState();
-      WidgetsBinding.instance.addObserver(this);
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
 
-      role = widget.role;
-      current = role == 'Student' ? 6 : 1;
+    role = widget.role;
+    current = role == 'Student' ? 6 : 1;
 
-      unawaited(_refreshUnreadNotificationCount());
+    unawaited(_refreshUnreadNotificationCount());
 
-      // Push is optional: a denied permission or an unsupported browser simply
-      // leaves the in-app notification list as the source of truth.
-      PushNotificationService.setMessageHandler(_handlePushMessage);
-      unawaited(PushNotificationService.initialize(role: role));
-    }
+    // Push is optional: a denied permission or an unsupported browser simply
+    // leaves the in-app notification list as the source of truth.
+    PushNotificationService.setMessageHandler(_handlePushMessage);
+    unawaited(PushNotificationService.initialize(role: role));
+  }
 
-    @override
-    void dispose() {
-      PushNotificationService.setMessageHandler(null);
+  @override
+  void dispose() {
+    PushNotificationService.setMessageHandler(null);
 
-      _notificationRefreshSignal.dispose();
-      WidgetsBinding.instance.removeObserver(this);
+    _notificationRefreshSignal.dispose();
+    WidgetsBinding.instance.removeObserver(this);
 
-      super.dispose();
-    }
-    Future<void> _refreshUnreadNotificationCount() async {
-      try {
-        final notifications = await ApiService.getNotifications();
+    super.dispose();
+  }
 
-        if (!mounted) return;
+  Future<void> _refreshUnreadNotificationCount() async {
+    try {
+      final notifications = await ApiService.getNotifications();
 
-        setState(() {
-          _unreadNotificationCount =
-              notifications.where((notification) => !notification.isRead).length;
-        });
-      } catch (_) {
-        // Keep the current badge value if the request fails.
-      }
-    }
-
-    void _setUnreadNotificationCount(int count) {
       if (!mounted) return;
 
       setState(() {
-        _unreadNotificationCount = count;
+        _unreadNotificationCount = notifications
+            .where((notification) => !notification.isRead)
+            .length;
       });
+    } catch (_) {
+      // Keep the current badge value if the request fails.
     }
+  }
 
-    /// Handles incoming push messages.
-    ///
-    /// A push is a signal to retrieve the latest notification records
-    /// from the backend. It does not create notification records locally.
-    void _handlePushMessage(PushMessage message) {
-      if (!mounted) return;
+  void _setUnreadNotificationCount(int count) {
+    if (!mounted) return;
 
-      // Tell the Notifications page to fetch the latest notifications.
-      _notificationRefreshSignal.value++;
+    setState(() {
+      _unreadNotificationCount = count;
+    });
+  }
 
-      // Update the unread badge as well.
-      unawaited(_refreshUnreadNotificationCount());
+  /// Handles incoming push messages.
+  ///
+  /// A push is a signal to retrieve the latest notification records
+  /// from the backend. It does not create notification records locally.
+  void _handlePushMessage(PushMessage message) {
+    if (!mounted) return;
 
-      final destination = _destinationIndex(message.destination);
-      final messenger = ScaffoldMessenger.maybeOf(context);
+    // Tell the Notifications page to fetch the latest notifications.
+    _notificationRefreshSignal.value++;
 
-      if (messenger == null) return;
+    // Update the unread badge as well.
+    unawaited(_refreshUnreadNotificationCount());
 
-      messenger
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            duration: const Duration(seconds: 6),
-            content: Semantics(
-              liveRegion: true,
-              child: Text(
-                message.body.isEmpty
-                    ? message.title
-                    : '${message.title}. ${message.body}',
-              ),
-            ),
-            action: SnackBarAction(
-              label: 'View',
-              onPressed: () => go(destination),
-            ),
-          ),
-        );
-    }
+    final destination = _destinationIndex(message.destination);
+    final messenger = ScaffoldMessenger.maybeOf(context);
 
-    @override
-    void didChangeAppLifecycleState(AppLifecycleState state) {
-      if (state == AppLifecycleState.resumed && mounted) {
-        _notificationRefreshSignal.value++;
-        unawaited(_refreshUnreadNotificationCount());
-      }
-    }
+    if (messenger == null) return;
 
-    /// Maps a push destination to the shell's page index for the current role.
-    int _destinationIndex(String destination) {
-      final student = role == 'Student';
-
-      return switch (destination) {
-        'dashboard' => student ? 6 : 1,
-        'activities' => student ? 8 : 5,
-        'announcements' => student ? 9 : 4,
-        'notifications' => 10,
-        _ => student ? 6 : 1,
-      };
-    }
-
-    List<(String, IconData, int)> _navItems(String navRole) {
-      final student = navRole == 'Student';
-
-      return student
-          ? const [
-              ('Dashboard', Icons.home_outlined, 6),
-              ('My Classes', Icons.menu_book_outlined, 7),
-              ('Activities', Icons.description_outlined, 8),
-              ('Updates', Icons.campaign_outlined, 9),
-              ('Profile', Icons.person_outline, 11),
-            ]
-          : const [
-              ('Dashboard', Icons.home_outlined, 1),
-              ('Classes', Icons.menu_book_outlined, 2),
-              ('Progress', Icons.bar_chart, 3),
-              ('Updates', Icons.campaign_outlined, 4),
-              ('Profile', Icons.person_outline, 11),
-            ];
-    }
-
-    void go(int index) {
-      setState(() {
-        current = index.clamp(0, 11).toInt();
-      });
-
-      if (index == 10) {
-        unawaited(_refreshUnreadNotificationCount());
-      }
-    }
-
-    @override
-    Widget build(BuildContext context) {
-      final isStudent = current == 6 ||
-          current == 7 ||
-          current == 8 ||
-          current == 9 ||
-          (current == 11 && role == 'Student');
-      final screenRole = current == 0 || current == 10 || current == 11
-          ? (current == 11 ? role : 'Shared')
-          : (isStudent ? 'Student' : 'Professor');
-      final activeLabel = current == 11
-          ? 'Profile'
-          : current == 10
-              ? ''
-              : (isStudent
-                  ? (current == 7
-                      ? 'My Classes'
-                      : current == 8
-                          ? 'Activities'
-                          : current == 9
-                              ? 'Announcements'
-                              : 'Dashboard')
-                  : (current == 2
-                      ? 'Classes'
-                      : current == 3
-                          ? 'Progress'
-                          : current == 4
-                              ? 'Announcements'
-                              : current == 5
-                                  ? 'Classes'
-                                  : 'Dashboard'));
-
-      final windowSize = windowSizeOf(context);
-      final items = _navItems(screenRole == 'Shared' ? role : screenRole);
-
-      // Full-screen pages (login splash, notifications) keep the simple layout.
-      final useSideNavigation = windowSize.usesSideNavigation &&
-          current != 0 &&
-          current != 10;
-
-      final content = Column(
-        children: [
-          // Offline banner: announced politely so a screen reader user knows why
-          // data may be stale, without interrupting what they are doing.
-          ValueListenableBuilder<bool>(
-            valueListenable: ApiService.offline,
-            builder: (context, isOffline, _) => isOffline
-                ? _OfflineBanner(onRetry: () => go(current))
-                : const SizedBox.shrink(),
-          ),
-          Expanded(
-            child: SafeArea(
-              child: _page(
-                current,
-                role,
-                go,
-                (r) => setState(() => role = r),
-                widget.user,
-                _setUnreadNotificationCount,
-                _notificationRefreshSignal,
-              ),
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 6),
+          content: Semantics(
+            liveRegion: true,
+            child: Text(
+              message.body.isEmpty
+                  ? message.title
+                  : '${message.title}. ${message.body}',
             ),
           ),
-        ],
+          action: SnackBarAction(
+            label: 'View',
+            onPressed: () => go(destination),
+          ),
+        ),
       );
+  }
 
-      return Scaffold(
-        appBar: current == 0
-            ? null
-            : AppBar(
-                automaticallyImplyLeading: false,
-                titleSpacing: 16,
-                title: Semantics(
-                  header: true,
-                  label: 'PeerSync${activeLabel.isEmpty ? '' : ', $activeLabel'}',
-                  child: ExcludeSemantics(
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 27,
-                          height: 27,
-                          decoration: BoxDecoration(
-                            border: Border.all(color: ink, width: 1.5),
-                            borderRadius: const BorderRadius.only(
-                              topLeft: Radius.circular(7),
-                              topRight: Radius.circular(7),
-                              bottomRight: Radius.circular(7),
-                              bottomLeft: Radius.circular(2),
-                            ),
-                          ),
-                          alignment: Alignment.center,
-                          child: const Text(
-                            'P',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w800,
-                              fontSize: 13,
-                            ),
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      _notificationRefreshSignal.value++;
+      unawaited(_refreshUnreadNotificationCount());
+    }
+  }
+
+  /// Maps a push destination to the shell's page index for the current role.
+  int _destinationIndex(String destination) {
+    final student = role == 'Student';
+
+    return switch (destination) {
+      'dashboard' => student ? 6 : 1,
+      'activities' => student ? 8 : 5,
+      'announcements' => student ? 9 : 4,
+      'notifications' => 10,
+      _ => student ? 6 : 1,
+    };
+  }
+
+  List<(String, IconData, int)> _navItems(String navRole) {
+    final student = navRole == 'Student';
+
+    return student
+        ? const [
+            ('Dashboard', Icons.home_outlined, 6),
+            ('My Classes', Icons.menu_book_outlined, 7),
+            ('Activities', Icons.description_outlined, 8),
+            ('Updates', Icons.campaign_outlined, 9),
+            ('Profile', Icons.person_outline, 11),
+          ]
+        : const [
+            ('Dashboard', Icons.home_outlined, 1),
+            ('Classes', Icons.menu_book_outlined, 2),
+            ('Progress', Icons.bar_chart, 3),
+            ('Updates', Icons.campaign_outlined, 4),
+            ('Profile', Icons.person_outline, 11),
+          ];
+  }
+
+  void go(int index) {
+    setState(() {
+      current = index.clamp(0, 11).toInt();
+    });
+
+    if (index == 10) {
+      unawaited(_refreshUnreadNotificationCount());
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isStudent =
+        current == 6 ||
+        current == 7 ||
+        current == 8 ||
+        current == 9 ||
+        (current == 11 && role == 'Student');
+    final screenRole = current == 0 || current == 10 || current == 11
+        ? (current == 11 ? role : 'Shared')
+        : (isStudent ? 'Student' : 'Professor');
+    final activeLabel = current == 11
+        ? 'Profile'
+        : current == 10
+        ? ''
+        : (isStudent
+              ? (current == 7
+                    ? 'My Classes'
+                    : current == 8
+                    ? 'Activities'
+                    : current == 9
+                    ? 'Announcements'
+                    : 'Dashboard')
+              : (current == 2
+                    ? 'Classes'
+                    : current == 3
+                    ? 'Progress'
+                    : current == 4
+                    ? 'Announcements'
+                    : current == 5
+                    ? 'Classes'
+                    : 'Dashboard'));
+
+    final windowSize = windowSizeOf(context);
+    final items = _navItems(screenRole == 'Shared' ? role : screenRole);
+
+    // Full-screen pages (login splash, notifications) keep the simple layout.
+    final useSideNavigation =
+        windowSize.usesSideNavigation && current != 0 && current != 10;
+
+    final content = Column(
+      children: [
+        // Offline banner: announced politely so a screen reader user knows why
+        // data may be stale, without interrupting what they are doing.
+        ValueListenableBuilder<bool>(
+          valueListenable: ApiService.offline,
+          builder: (context, isOffline, _) => isOffline
+              ? _OfflineBanner(onRetry: () => go(current))
+              : const SizedBox.shrink(),
+        ),
+        Expanded(
+          child: SafeArea(
+            child: _page(
+              current,
+              role,
+              go,
+              (r) => setState(() => role = r),
+              widget.user,
+              _setUnreadNotificationCount,
+              _notificationRefreshSignal,
+            ),
+          ),
+        ),
+      ],
+    );
+
+    return Scaffold(
+      appBar: current == 0
+          ? null
+          : AppBar(
+              automaticallyImplyLeading: false,
+              titleSpacing: 16,
+              title: Semantics(
+                header: true,
+                label: 'PeerSync${activeLabel.isEmpty ? '' : ', $activeLabel'}',
+                child: ExcludeSemantics(
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 27,
+                        height: 27,
+                        decoration: BoxDecoration(
+                          border: Border.all(color: ink, width: 1.5),
+                          borderRadius: const BorderRadius.only(
+                            topLeft: Radius.circular(7),
+                            topRight: Radius.circular(7),
+                            bottomRight: Radius.circular(7),
+                            bottomLeft: Radius.circular(2),
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        const Text(
-                          'PeerSync',
+                        alignment: Alignment.center,
+                        child: const Text(
+                          'P',
                           style: TextStyle(
                             fontWeight: FontWeight.w800,
-                            fontSize: 17,
-                            color: ink,
+                            fontSize: 13,
                           ),
                         ),
+                      ),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'PeerSync',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 17,
+                          color: ink,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                IconButton(
+                  tooltip: _unreadNotificationCount > 0
+                      ? 'Notifications, $_unreadNotificationCount unread'
+                      : 'Notifications, none unread',
+                  onPressed: () => go(10),
+                  icon: ExcludeSemantics(
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        const Icon(Icons.notifications_none, color: ink),
+                        if (_unreadNotificationCount > 0)
+                          Positioned(
+                            right: -6,
+                            top: -5,
+                            child: Container(
+                              constraints: const BoxConstraints(
+                                minWidth: 18,
+                                minHeight: 18,
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                                vertical: 2,
+                              ),
+                              decoration: const BoxDecoration(
+                                color: AppColors.danger,
+                                shape: BoxShape.circle,
+                              ),
+                              alignment: Alignment.center,
+                              child: Text(
+                                _unreadNotificationCount > 99
+                                    ? '99+'
+                                    : '$_unreadNotificationCount',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                   ),
                 ),
-                actions: [
-                  IconButton(
-                    tooltip: _unreadNotificationCount > 0
-                        ? 'Notifications, $_unreadNotificationCount unread'
-                        : 'Notifications, none unread',
-                    onPressed: () => go(10),
-                    icon: ExcludeSemantics(
-                      child: Stack(
-                        clipBehavior: Clip.none,
+                IconButton(
+                  tooltip: 'Sign out',
+                  onPressed: _confirmSignOut,
+                  icon: const Icon(Icons.logout, color: ink),
+                ),
+              ],
+            ),
+      body: useSideNavigation
+          ? Row(
+              children: [
+                _sideNavigation(items, windowSize),
+                const VerticalDivider(width: 1, color: AppColors.border),
+                Expanded(child: content),
+              ],
+            )
+          : content,
+      bottomNavigationBar: current == 0 || current == 10 || useSideNavigation
+          ? null
+          : _bottomNav(items, activeLabel, go),
+    );
+  }
+
+  /// Persistent navigation for tablets and desktop browsers.
+  Widget _sideNavigation(
+    List<(String, IconData, int)> items,
+    WindowSize windowSize,
+  ) {
+    final selectedIndex = items.indexWhere((item) => item.$3 == current);
+
+    return NavigationRail(
+      extended: windowSize.isExpanded,
+      minExtendedWidth: 208,
+      backgroundColor: AppColors.background,
+      indicatorColor: AppColors.infoSurface,
+      selectedIndex: selectedIndex < 0 ? 0 : selectedIndex,
+      labelType: windowSize.isExpanded
+          ? NavigationRailLabelType.none
+          : NavigationRailLabelType.all,
+      onDestinationSelected: (index) => go(items[index].$3),
+      leading: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: ExcludeSemantics(
+          child: Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              border: Border.all(color: ink, width: 1.5),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(9),
+                topRight: Radius.circular(9),
+                bottomRight: Radius.circular(9),
+                bottomLeft: Radius.circular(3),
+              ),
+            ),
+            alignment: Alignment.center,
+            child: const Text(
+              'P',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+            ),
+          ),
+        ),
+      ),
+      destinations: [
+        for (final item in items)
+          NavigationRailDestination(
+            icon: Icon(item.$2),
+            selectedIcon: Icon(item.$2, color: ink),
+            label: Text(item.$1),
+            padding: const EdgeInsets.symmetric(vertical: 4),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _confirmSignOut() async {
+    final shouldSignOut = await showConfirmDialog(
+      context,
+      title: 'Sign out of PeerSync?',
+      message:
+          'You will need to enter your email and password to sign in again.',
+      confirmLabel: 'Sign out',
+      destructive: false,
+    );
+
+    if (!shouldSignOut) return;
+
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+
+    // Stop this device receiving the signed-out user's pushes, and remove
+    // their cached data from a possibly shared machine.
+    await PushNotificationService.unregister(role: role);
+    await OfflineCache.clearForUser(uid);
+    await FirebaseAuth.instance.signOut();
+  }
+
+  Widget _bottomNav(
+    List<(String, IconData, int)> items,
+    String active,
+    ValueChanged<int> go,
+  ) {
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        color: AppColors.background,
+        border: Border(top: BorderSide(color: AppColors.border)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          // Each destination is at least 56px tall so it clears the
+          // WCAG 2.2 SC 2.5.8 minimum target size of 48x48.
+          height: 64,
+          child: Row(
+            children: items.map((item) {
+              final selected =
+                  active == item.$1 ||
+                  (active == 'Announcements' && item.$1 == 'Updates');
+              final color = selected ? ink : AppColors.textSecondary;
+
+              return Expanded(
+                child: Semantics(
+                  button: true,
+                  selected: selected,
+                  label: item.$1,
+                  child: InkWell(
+                    onTap: () => go(item.$3),
+                    child: ExcludeSemantics(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Icon(
-                            Icons.notifications_none,
-                            color: ink,
+                          Icon(item.$2, size: 22, color: color),
+                          const SizedBox(height: 3),
+                          Text(
+                            item.$1,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: color,
+                              fontWeight: selected
+                                  ? FontWeight.w700
+                                  : FontWeight.w400,
+                            ),
                           ),
-                          if (_unreadNotificationCount > 0)
-                            Positioned(
-                              right: -6,
-                              top: -5,
-                              child: Container(
-                                constraints: const BoxConstraints(
-                                  minWidth: 18,
-                                  minHeight: 18,
-                                ),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 4,
-                                  vertical: 2,
-                                ),
-                                decoration: const BoxDecoration(
-                                  color: AppColors.danger,
-                                  shape: BoxShape.circle,
-                                ),
-                                alignment: Alignment.center,
-                                child: Text(
-                                  _unreadNotificationCount > 99
-                                      ? '99+'
-                                      : '$_unreadNotificationCount',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
+                          if (selected)
+                            Container(
+                              width: 14,
+                              height: 2,
+                              margin: const EdgeInsets.only(top: 2),
+                              color: ink,
                             ),
                         ],
                       ),
                     ),
                   ),
-                  IconButton(
-                    tooltip: 'Sign out',
-                    onPressed: _confirmSignOut,
-                    icon: const Icon(Icons.logout, color: ink),
-                  ),
-                ],
-              ),
-        body: useSideNavigation
-            ? Row(
-                children: [
-                  _sideNavigation(items, windowSize),
-                  const VerticalDivider(width: 1, color: AppColors.border),
-                  Expanded(child: content),
-                ],
-              )
-            : content,
-        bottomNavigationBar: current == 0 || current == 10 || useSideNavigation
-            ? null
-            : _bottomNav(items, activeLabel, go),
-      );
-    }
-
-    /// Persistent navigation for tablets and desktop browsers.
-    Widget _sideNavigation(
-      List<(String, IconData, int)> items,
-      WindowSize windowSize,
-    ) {
-      final selectedIndex = items.indexWhere((item) => item.$3 == current);
-
-      return NavigationRail(
-        extended: windowSize.isExpanded,
-        minExtendedWidth: 208,
-        backgroundColor: AppColors.background,
-        indicatorColor: AppColors.infoSurface,
-        selectedIndex: selectedIndex < 0 ? 0 : selectedIndex,
-        labelType: windowSize.isExpanded
-            ? NavigationRailLabelType.none
-            : NavigationRailLabelType.all,
-        onDestinationSelected: (index) => go(items[index].$3),
-        leading: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          child: ExcludeSemantics(
-            child: Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                border: Border.all(color: ink, width: 1.5),
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(9),
-                  topRight: Radius.circular(9),
-                  bottomRight: Radius.circular(9),
-                  bottomLeft: Radius.circular(3),
                 ),
-              ),
-              alignment: Alignment.center,
-              child: const Text(
-                'P',
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-              ),
-            ),
+              );
+            }).toList(),
           ),
         ),
-        destinations: [
-          for (final item in items)
-            NavigationRailDestination(
-              icon: Icon(item.$2),
-              selectedIcon: Icon(item.$2, color: ink),
-              label: Text(item.$1),
-              padding: const EdgeInsets.symmetric(vertical: 4),
-            ),
-        ],
-      );
-    }
-
-    Future<void> _confirmSignOut() async {
-      final shouldSignOut = await showConfirmDialog(
-        context,
-        title: 'Sign out of PeerSync?',
-        message: 'You will need to enter your email and password to sign in again.',
-        confirmLabel: 'Sign out',
-        destructive: false,
-      );
-
-      if (!shouldSignOut) return;
-
-      final uid = FirebaseAuth.instance.currentUser?.uid;
-
-      // Stop this device receiving the signed-out user's pushes, and remove
-      // their cached data from a possibly shared machine.
-      await PushNotificationService.unregister(role: role);
-      await OfflineCache.clearForUser(uid);
-      await FirebaseAuth.instance.signOut();
-    }
-
-    Widget _bottomNav(
-      List<(String, IconData, int)> items,
-      String active,
-      ValueChanged<int> go,
-    ) {
-      return DecoratedBox(
-        decoration: const BoxDecoration(
-          color: AppColors.background,
-          border: Border(top: BorderSide(color: AppColors.border)),
-        ),
-        child: SafeArea(
-          top: false,
-          child: SizedBox(
-            // Each destination is at least 56px tall so it clears the
-            // WCAG 2.2 SC 2.5.8 minimum target size of 48x48.
-            height: 64,
-            child: Row(
-              children: items.map((item) {
-                final selected = active == item.$1 ||
-                    (active == 'Announcements' && item.$1 == 'Updates');
-                final color = selected ? ink : AppColors.textSecondary;
-
-                return Expanded(
-                  child: Semantics(
-                    button: true,
-                    selected: selected,
-                    label: item.$1,
-                    child: InkWell(
-                      onTap: () => go(item.$3),
-                      child: ExcludeSemantics(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(item.$2, size: 22, color: color),
-                            const SizedBox(height: 3),
-                            Text(
-                              item.$1,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: color,
-                                fontWeight:
-                                    selected ? FontWeight.w700 : FontWeight.w400,
-                              ),
-                            ),
-                            if (selected)
-                              Container(
-                                width: 14,
-                                height: 2,
-                                margin: const EdgeInsets.only(top: 2),
-                                color: ink,
-                              ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
-          ),
-        ),
-      );
-    }
+      ),
+    );
+  }
 }
 
 /// Shown when [ApiService] served a response from the three-day offline cache.
@@ -821,19 +904,43 @@ class _OfflineBanner extends StatelessWidget {
   }
 }
 
-Widget _page(int index, String role, ValueChanged<int> go, ValueChanged<String> setRole, AuthenticatedUser user,ValueChanged<int> onUnreadCountChanged,ValueListenable<int> notificationRefreshSignal,) {
+Widget _page(
+  int index,
+  String role,
+  ValueChanged<int> go,
+  ValueChanged<String> setRole,
+  AuthenticatedUser user,
+  ValueChanged<int> onUnreadCountChanged,
+  ValueListenable<int> notificationRefreshSignal,
+) {
   switch (index) {
-    case 1: return ProfessorDashboard(go: go, user: user,);
-    case 2: return const ClassManagement();
-    case 3: return const ProgressMonitoring();
-    case 4: return const AnnouncementsManagement();
-    case 5: return ActivitiesPage(user: user);
-    case 6: return StudentDashboard(go: go, user: user);
-    case 7: return const MyClassesPage();
-    case 8: return ActivitiesPage(user: user);
-    case 9: return const StudentAnnouncementsPage();
-    case 10: return NotificationsPage(onUnreadCountChanged: onUnreadCountChanged, onBack: () => go(role == 'Professor' ? 1 : 6), refreshSignal: notificationRefreshSignal,);
-    case 11: return ProfilePage(user: user);
-    default: return const SizedBox.shrink();
+    case 1:
+      return ProfessorDashboard(go: go, user: user);
+    case 2:
+      return const ClassManagement();
+    case 3:
+      return const ProgressMonitoring();
+    case 4:
+      return const AnnouncementsManagement();
+    case 5:
+      return ActivitiesPage(user: user);
+    case 6:
+      return StudentDashboard(go: go, user: user);
+    case 7:
+      return const MyClassesPage();
+    case 8:
+      return ActivitiesPage(user: user);
+    case 9:
+      return const StudentAnnouncementsPage();
+    case 10:
+      return NotificationsPage(
+        onUnreadCountChanged: onUnreadCountChanged,
+        onBack: () => go(role == 'Professor' ? 1 : 6),
+        refreshSignal: notificationRefreshSignal,
+      );
+    case 11:
+      return ProfilePage(user: user);
+    default:
+      return const SizedBox.shrink();
   }
 }

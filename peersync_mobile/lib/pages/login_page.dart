@@ -1,7 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/a11y/app_a11y.dart';
@@ -31,7 +30,7 @@ class _LoginPageState extends State<LoginPage> {
   bool showPassword = false;
   bool isLoading = false;
 
-
+/*
 Future<void> _printAuthenticatedIdToken(String role) async {
   final user = FirebaseAuth.instance.currentUser;
 
@@ -63,8 +62,7 @@ Future<void> _printAuthenticatedIdToken(String role) async {
   } on PlatformException catch (e) {
     debugPrint('Clipboard access failed: ${e.message}');
   }
-}
-
+}*/
 
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
@@ -134,8 +132,7 @@ Future<void> _printAuthenticatedIdToken(String role) async {
       await preferences.setBool('peersync_remember_me', remember);
 
       // 1. Authenticate through Firebase Authentication.
-      final credential =
-          await FirebaseAuth.instance.signInWithEmailAndPassword(
+      final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
@@ -163,12 +160,15 @@ Future<void> _printAuthenticatedIdToken(String role) async {
       // 3. Check whether the account is active.
       if (userData['isActive'] != true) {
         await FirebaseAuth.instance.signOut();
-        throw Exception('Your account is inactive. Contact your administrator.');
+        throw Exception(
+          'Your account is inactive. Contact your administrator.',
+        );
       }
 
       // 4. Verify the actual Firestore role.
-      final accountRole =
-          (userData['role'] as String? ?? '').trim().toLowerCase();
+      final accountRole = (userData['role'] as String? ?? '')
+          .trim()
+          .toLowerCase();
 
       final selectedRole = role.toLowerCase();
 
@@ -185,10 +185,11 @@ Future<void> _printAuthenticatedIdToken(String role) async {
 
       // Professor OTP is intentionally postponed during this development stage.
       // Both valid roles can proceed after Firebase and Firestore validation.
-      final authenticatedRole =
-          accountRole == 'professor' ? 'Professor' : 'Student';
-      
-      await _printAuthenticatedIdToken(authenticatedRole);
+      final authenticatedRole = accountRole == 'professor'
+          ? 'Professor'
+          : 'Student';
+
+      //await _printAuthenticatedIdToken(authenticatedRole);
 
       loginSucceeded = true;
       widget.onLogin(authenticatedRole);
@@ -207,8 +208,7 @@ Future<void> _printAuthenticatedIdToken(String role) async {
         'invalid-email' => 'Please enter a valid email address.',
         'user-not-found' ||
         'wrong-password' ||
-        'invalid-credential' =>
-          'Invalid email or password.',
+        'invalid-credential' => 'Invalid email or password.',
         'user-disabled' => 'This account has been disabled.',
         'too-many-requests' => 'Too many attempts. Please try again later.',
         'network-request-failed' =>
@@ -245,7 +245,6 @@ Future<void> _printAuthenticatedIdToken(String role) async {
       }
     }
   }
-  
 
   @override
   Widget build(BuildContext context) {
@@ -261,44 +260,46 @@ Future<void> _printAuthenticatedIdToken(String role) async {
             children: [
               const SizedBox(height: 24),
 
-              Column(children: [
-                Container(
-                  width: 52,
-                  height: 52,
-                  decoration: BoxDecoration(
-                    color: ink,
-                    borderRadius: BorderRadius.circular(13),
-                  ),
-                  alignment: Alignment.center,
-                  child: const ExcludeSemantics(
-                    child: Text(
-                      'P',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 25,
-                        fontWeight: FontWeight.w800,
+              Column(
+                children: [
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: ink,
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                    alignment: Alignment.center,
+                    child: const ExcludeSemantics(
+                      child: Text(
+                        'P',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 25,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                const Text(
-                  'PeerSync',
-                  style: TextStyle(
-                    fontSize: 26,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
+                  const SizedBox(height: 12),
+                  const Text(
+                    'PeerSync',
+                    style: TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 4),
-                const Text(
-                  'Learn together. Progress together.',
-                  style: TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 13,
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Learn together. Progress together.',
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 13,
+                    ),
                   ),
-                ),
-              ]),
+                ],
+              ),
 
               const SizedBox(height: 48),
 
@@ -316,10 +317,7 @@ Future<void> _printAuthenticatedIdToken(String role) async {
               const SizedBox(height: 5),
               const Text(
                 'Sign in to continue to your workspace.',
-                style: TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 13,
-                ),
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
               ),
 
               const SizedBox(height: 23),
@@ -328,14 +326,8 @@ Future<void> _printAuthenticatedIdToken(String role) async {
 
               SegmentedButton<String>(
                 segments: const [
-                  ButtonSegment(
-                    value: 'Professor',
-                    label: Text('Professor'),
-                  ),
-                  ButtonSegment(
-                    value: 'Student',
-                    label: Text('Student'),
-                  ),
+                  ButtonSegment(value: 'Professor', label: Text('Professor')),
+                  ButtonSegment(value: 'Student', label: Text('Student')),
                 ],
                 selected: {role},
                 onSelectionChanged: (v) {
@@ -388,8 +380,7 @@ Future<void> _printAuthenticatedIdToken(String role) async {
                   decoration: InputDecoration(
                     hintText: 'Enter password',
                     suffixIcon: IconButton(
-                      tooltip:
-                          showPassword ? 'Hide password' : 'Show password',
+                      tooltip: showPassword ? 'Hide password' : 'Show password',
                       onPressed: () {
                         setState(() {
                           showPassword = !showPassword;
@@ -408,45 +399,47 @@ Future<void> _printAuthenticatedIdToken(String role) async {
 
               const SizedBox(height: 8),
 
-              Row(children: [
-                MergeSemantics(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Checkbox(
-                        value: remember,
-                        onChanged: (v) {
-                          setState(() {
-                            remember = v ?? false;
-                          });
-                        },
-                      ),
-                      const ExcludeSemantics(
-                        child: Text(
-                          'Remember me',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: AppColors.textPrimary,
+              Row(
+                children: [
+                  MergeSemantics(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Checkbox(
+                          value: remember,
+                          onChanged: (v) {
+                            setState(() {
+                              remember = v ?? false;
+                            });
+                          },
+                        ),
+                        const ExcludeSemantics(
+                          child: Text(
+                            'Remember me',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: AppColors.textPrimary,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-                const Spacer(),
-                TextButton(
-                  onPressed: isLoading
-                      ? null
-                      : () => _showMessage(
+                  const Spacer(),
+                  TextButton(
+                    onPressed: isLoading
+                        ? null
+                        : () => _showMessage(
                             'Password reset is not available in this version. '
                             'Please contact your administrator.',
                           ),
-                  child: const Text(
-                    'Forgot password?',
-                    style: TextStyle(fontSize: 13),
+                    child: const Text(
+                      'Forgot password?',
+                      style: TextStyle(fontSize: 13),
+                    ),
                   ),
-                ),
-              ]),
+                ],
+              ),
 
               if (errorMessage != null) ...[
                 const SizedBox(height: 8),
@@ -501,12 +494,12 @@ Future<void> _printAuthenticatedIdToken(String role) async {
                   onPressed: isLoading
                       ? null
                       : () => _showMessage(
-                            role == 'Student'
-                                ? 'Ask your professor for a class join code. '
+                          role == 'Student'
+                              ? 'Ask your professor for a class join code. '
                                     'Self-service joining is not available yet.'
-                                : 'Accounts are created by your institution. '
+                              : 'Accounts are created by your institution. '
                                     'Please contact your administrator.',
-                          ),
+                        ),
                   child: Text(
                     role == 'Student' ? 'Join a class' : 'Create account',
                     style: const TextStyle(fontSize: 13),
@@ -519,10 +512,7 @@ Future<void> _printAuthenticatedIdToken(String role) async {
               const Center(
                 child: Text(
                   'PeerSync Academic Workspace · v1.0',
-                  style: TextStyle(
-                    color: AppColors.textMuted,
-                    fontSize: 12,
-                  ),
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 12),
                 ),
               ),
             ],

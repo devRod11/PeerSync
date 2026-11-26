@@ -42,7 +42,10 @@ class ApiConfig {
   static String get authMe => '$baseUrl/auth/me';
   static String get studentCheck => '$baseUrl/auth/student-check';
   static String get professorCheck => '$baseUrl/auth/professor-check';
-
+  static String get professorOtpRequest =>
+      '$baseUrl/auth/professor/otp/request';
+  static String get professorOtpVerify => '$baseUrl/auth/professor/otp/verify';
+  static String get professorLogout => '$baseUrl/auth/professor/logout';
   static String get projects => '$baseUrl/projects/';
   static String get groups => '$baseUrl/groups/';
   static String get milestones => '$baseUrl/milestones/';
@@ -53,9 +56,11 @@ class ApiConfig {
 
   /// Device-token registration for push notifications.
   static String get pushDevices => '$baseUrl/notifications/devices';
-    // Google Calendar integration.
-  static String get googleCalendarAuthorize => '$baseUrl/google-calendar/oauth/authorize';
+  // Google Calendar integration.
+  static String get googleCalendarAuthorize =>
+      '$baseUrl/google-calendar/oauth/authorize';
   static String get googleCalendarStatus => '$baseUrl/google-calendar/status';
   static String get googleCalendarSync => '$baseUrl/google-calendar/sync';
-  static String get googleCalendarDisconnect => '$baseUrl/google-calendar/disconnect';
+  static String get googleCalendarDisconnect =>
+      '$baseUrl/google-calendar/disconnect';
 }
