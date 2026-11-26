@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     google_drive_redirect_uri: str | None = None
     google_drive_folder_id: str | None = None
     google_drive_token_encryption_key: str | None = None
+    google_calendar_client_id: str | None = None
+    google_calendar_client_secret: str | None = None
+    google_calendar_redirect_uri: str | None = None
+    google_calendar_token_encryption_key: str | None = None
 
     @property
     def cors_origin_list(self) -> list[str]:

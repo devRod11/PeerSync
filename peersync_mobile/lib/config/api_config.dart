@@ -53,4 +53,9 @@ class ApiConfig {
 
   /// Device-token registration for push notifications.
   static String get pushDevices => '$baseUrl/notifications/devices';
+    // Google Calendar integration.
+  static String get googleCalendarAuthorize => '$baseUrl/google-calendar/oauth/authorize';
+  static String get googleCalendarStatus => '$baseUrl/google-calendar/status';
+  static String get googleCalendarSync => '$baseUrl/google-calendar/sync';
+  static String get googleCalendarDisconnect => '$baseUrl/google-calendar/disconnect';
 }

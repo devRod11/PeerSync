@@ -325,6 +325,71 @@ class ApiService {
     return AuthenticatedUser.fromJson(userData);
   }
 
+    // --------------------------------------------------
+  // Google Calendar Integration
+  // --------------------------------------------------
+
+  // Retrieve the student's Google Calendar connection status.
+  static Future<Map<String, dynamic>> getGoogleCalendarStatus() async {
+    final response = await get(
+      ApiConfig.googleCalendarStatus,
+      cache: false,
+    );
+
+    if (response is! Map<String, dynamic>) {
+      throw Exception('Invalid Google Calendar status response.');
+    }
+
+    return response;
+  }
+
+  // Generate the Google Calendar OAuth authorization URL.
+  static Future<String> getGoogleCalendarAuthorizationUrl() async {
+    final response = await get(
+      ApiConfig.googleCalendarAuthorize,
+      cache: false,
+    );
+
+    if (response is! Map<String, dynamic>) {
+      throw Exception('Invalid Google Calendar authorization response.');
+    }
+
+    final authorizationUrl = response['authorizationUrl'];
+
+    if (authorizationUrl is! String || authorizationUrl.isEmpty) {
+      throw Exception('Google Calendar authorization URL is missing.');
+    }
+
+    return authorizationUrl;
+  }
+
+  // Synchronize existing tasks and milestones to Google Calendar.
+  static Future<Map<String, dynamic>> syncGoogleCalendar() async {
+      final response = await post(
+        ApiConfig.googleCalendarSync,
+        body: {},
+      );
+
+      if (response is! Map<String, dynamic>) {
+        throw Exception('Invalid Google Calendar synchronization response.');
+      }
+
+      return response;
+    }
+
+    // Disconnect the student's Google Calendar account.
+    static Future<Map<String, dynamic>> disconnectGoogleCalendar() async {
+      final response = await delete(
+        ApiConfig.googleCalendarDisconnect,
+      );
+
+      if (response is! Map<String, dynamic>) {
+        throw Exception('Invalid Google Calendar disconnect response.');
+      }
+
+      return response;
+    }
+
 
   // Retrieve all groups accessible to the authenticated user.
   static Future<List<Group>> getGroups() async {
