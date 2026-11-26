@@ -11,6 +11,7 @@ DIGEST_COLLECTION = "email_digests"
 NOTIFICATION_COLLECTION = "notifications"
 USER_COLLECTION = "users"
 
+DIGEST_INTERVAL_HOURS = 72
 DIGEST_LEASE_MINUTES = 10
 
 
@@ -72,9 +73,11 @@ def _get_period_notifications(
     period_ended_at
 ):
     """
-    Retrieve all notification records created during the digest period.
+    Retrieve notifications created during the current digest period.
 
-    Read status does not affect inclusion in the digest.
+    The end boundary is exclusive. Notifications created at or after
+    that boundary belong to the next digest period.
+    Read status does not affect inclusion.
     """
 
     query = (
@@ -91,7 +94,7 @@ def _get_period_notifications(
         )
         .where(
             filter=FieldFilter(
-                "createdAt", "<=", period_ended_at
+                "createdAt", "<", period_ended_at
             )
         )
     )
@@ -102,24 +105,100 @@ def _get_period_notifications(
     ]
 
 
+def _complete_digest_cycle(
+    db,
+    digest_ref,
+    period_ended_at,
+    notification_count,
+    email_sent
+):
+    """
+    Complete the current digest period without deleting its tracking doc.
+
+    Notifications arriving during email delivery remain eligible for
+    the next period because its start time is set to period_ended_at.
+    """
+
+    transaction = db.transaction()
+
+    @firestore.transactional
+    def complete(transaction):
+        snapshot = digest_ref.get(transaction=transaction)
+
+        if not snapshot.exists:
+            return False
+
+        data = snapshot.to_dict() or {}
+
+        if data.get("status") != "sending":
+            return False
+
+        processed_at = datetime.now(timezone.utc)
+
+        updates = {
+            "periodStartedAt": period_ended_at,
+            "nextDigestAt": period_ended_at + timedelta(
+                hours=DIGEST_INTERVAL_HOURS
+            ),
+            "status": "collecting",
+            "leaseUntil": firestore.DELETE_FIELD,
+            "lastError": firestore.DELETE_FIELD,
+            "lastProcessedAt": processed_at,
+            "lastNotificationCount": notification_count,
+            "updatedAt": processed_at
+        }
+
+        if email_sent:
+            updates["lastSentAt"] = processed_at
+
+        transaction.update(digest_ref, updates)
+
+        return True
+
+    return complete(transaction)
+
+
 def _release_digest(db, digest_ref, error_message=None):
     """
     Return a failed digest to the collecting state for retry.
+    Its original period boundaries remain unchanged.
     """
 
-    digest_ref.update({
-        "status": "collecting",
-        "leaseUntil": firestore.DELETE_FIELD,
-        "lastError": error_message or "Digest processing failed.",
-        "updatedAt": datetime.now(timezone.utc)
-    })
+    transaction = db.transaction()
+
+    @firestore.transactional
+    def release(transaction):
+        snapshot = digest_ref.get(transaction=transaction)
+
+        if not snapshot.exists:
+            return
+
+        data = snapshot.to_dict() or {}
+
+        if data.get("status") != "sending":
+            return
+
+        transaction.update(
+            digest_ref,
+            {
+                "status": "collecting",
+                "leaseUntil": firestore.DELETE_FIELD,
+                "lastError": (
+                    error_message or "Digest processing failed."
+                ),
+                "updatedAt": datetime.now(timezone.utc)
+            }
+        )
+
+    release(transaction)
 
 
 def process_due_email_digests(db):
     """
     Process all due 72-hour notification digests.
 
-    Returns processing statistics.
+    After processing, the recipient's tracking document is rolled
+    forward into the next 72-hour collection period.
     """
 
     now = datetime.now(timezone.utc)
@@ -162,7 +241,10 @@ def process_due_email_digests(db):
                     "Digest recipient or period start is missing."
                 )
 
-            # Retrieve the recipient's email address.
+            # Capture the collection boundary before retrieving
+            # notifications or sending the email.
+            period_ended_at = datetime.now(timezone.utc)
+
             user_snapshot = (
                 db.collection(USER_COLLECTION)
                 .document(recipient_id)
@@ -182,30 +264,54 @@ def process_due_email_digests(db):
                     "Recipient email address is missing."
                 )
 
-            # Retrieve notifications created during this period.
             notifications = _get_period_notifications(
                 db,
                 recipient_id,
                 period_started_at,
-                now
+                period_ended_at
             )
 
-            # No notifications means there is nothing to email.
+            # Even an empty period must be rolled forward.
+            # Deleting the tracking document here could lose
+            # notifications arriving during processing.
             if not notifications:
-                digest_ref.delete()
+                completed = _complete_digest_cycle(
+                    db,
+                    digest_ref,
+                    period_ended_at,
+                    notification_count=0,
+                    email_sent=False
+                )
+
+                if not completed:
+                    raise RuntimeError(
+                        "Unable to complete empty digest period."
+                    )
+
                 statistics["skipped"] += 1
                 continue
 
-            # Send the digest through the separate SendGrid function.
             send_notification_digest_email(
                 recipient_email=recipient_email,
                 notifications=notifications,
                 period_started_at=period_started_at,
-                period_ended_at=now
+                period_ended_at=period_ended_at
             )
 
-            # Delete the tracking document only after SendGrid accepts it.
-            digest_ref.delete()
+            # Roll the tracking document forward only after
+            # SendGrid accepts the email.
+            completed = _complete_digest_cycle(
+                db,
+                digest_ref,
+                period_ended_at,
+                notification_count=len(notifications),
+                email_sent=True
+            )
+
+            if not completed:
+                raise RuntimeError(
+                    "Email was accepted, but digest rollover failed."
+                )
 
             statistics["sent"] += 1
 
