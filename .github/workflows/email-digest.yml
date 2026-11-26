@@ -15,6 +15,7 @@ jobs:
           PEERSYNC_API_URL: ${{ secrets.PEERSYNC_API_URL }}
           EMAIL_DIGEST_CRON_SECRET: ${{ secrets.EMAIL_DIGEST_CRON_SECRET }}
         run: |
+          echo "Target URL: ${PEERSYNC_API_URL}/internal/email-digests/process"
           curl --fail --silent --show-error \
             --request POST \
             "${PEERSYNC_API_URL}/internal/email-digests/process" \
