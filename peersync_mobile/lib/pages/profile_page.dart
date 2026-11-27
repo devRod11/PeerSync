@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/authenticated_user.dart';
 import '../services/api_service.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
 import '../widgets/shared_widgets.dart';
 
 class ProfilePage extends StatefulWidget {
@@ -818,7 +819,30 @@ class _ProfilePageState extends State<ProfilePage> {
           ),
         ),
 
-        const SectionHeading('Account'),
+        const SectionHeading('Appearance'),
+
+        InfoCard(
+          child: Material(
+            color: Colors.transparent,
+            child: SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              secondary: Icon(
+                Icons.dark_mode_outlined,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              title: const Text('Dark mode'),
+              subtitle: const Text(
+                'Use a darker color theme throughout PeerSync.',
+              ),
+              value: AppThemeController.instance.isDarkMode,
+              onChanged: (enabled) {
+                AppThemeController.instance.setDarkMode(enabled);
+              },
+            ),
+          ),
+        ),
+        
+        const SectionHeading('Account'),  
 
         InfoCard(
           child: Material(

@@ -5,7 +5,6 @@ import '../models/announcement.dart';
 import '../models/group.dart';
 import '../models/task.dart';
 import '../services/api_service.dart';
-import '../theme/app_colors.dart';
 import '../widgets/shared_widgets.dart';
 
 class MyClassesPage extends StatefulWidget {
@@ -207,13 +206,16 @@ class _MyClassesPageState extends State<MyClassesPage> {
     final taskCount = _taskCountForProject(groups);
     final deadlineCount = _deadlineCountForProject(groups);
 
+
+    final colors = Theme.of(context).colorScheme;
+
     return InfoCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const BadgeX('MY CLASS', dark: true),
+              BadgeX('MY CLASS', dark: true),
               const Spacer(),
               Text(
                 '${groups.length} ${groups.length == 1 ? 'GROUP' : 'GROUPS'}',
@@ -232,12 +234,13 @@ class _MyClassesPageState extends State<MyClassesPage> {
             style: subStyle,
           ),
           const SizedBox(height: 14),
-          const Divider(),
+          Divider(color: colors.outlineVariant),
           Row(
             children: [
-              const Icon(
+              Icon(
                 Icons.groups_outlined,
                 size: 18,
+                color: colors.onSurfaceVariant,
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -252,9 +255,10 @@ class _MyClassesPageState extends State<MyClassesPage> {
           const SizedBox(height: 8),
           Row(
             children: [
-              const Icon(
+              Icon(
                 Icons.assignment_outlined,
                 size: 18,
+                color: colors.onSurfaceVariant,
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -269,9 +273,10 @@ class _MyClassesPageState extends State<MyClassesPage> {
           const SizedBox(height: 8),
           Row(
             children: [
-              const Icon(
+              Icon(
                 Icons.calendar_month_outlined,
                 size: 18,
+                color: colors.onSurfaceVariant,
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -286,10 +291,11 @@ class _MyClassesPageState extends State<MyClassesPage> {
         ],
       ),
     );
-  }
+}
 
   // Display group information.
   Widget _buildGroupCard(Group group) {
+    final colors = Theme.of(context).colorScheme;
     final isLeaderAssigned =
         group.leaderID != null && group.leaderID!.isNotEmpty;
 
@@ -323,12 +329,13 @@ class _MyClassesPageState extends State<MyClassesPage> {
             style: subStyle,
           ),
           const SizedBox(height: 14),
-          const Divider(),
+          Divider(color: colors.outlineVariant),
           Row(
             children: [
-              const Icon(
+              Icon(
                 Icons.people_outline,
                 size: 18,
+                color: colors.onSurfaceVariant,
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -346,8 +353,8 @@ class _MyClassesPageState extends State<MyClassesPage> {
                 Icons.star_outline,
                 size: 18,
                 color: isLeaderAssigned
-                    ? AppColors.warning
-                    : AppColors.textMuted,
+                  ? colors.tertiary
+                  : colors.onSurfaceVariant,
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -374,6 +381,7 @@ class _MyClassesPageState extends State<MyClassesPage> {
 
   // Display group details and actual group members.
   void _showGroupDetails(Group group) {
+    final colors = Theme.of(context).colorScheme;
     showDialog(
       context: context,
       builder: (dialogContext) {
@@ -384,21 +392,23 @@ class _MyClassesPageState extends State<MyClassesPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text(
+                Text(
                   'PROJECT',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 12,
+                    color: colors.onSurfaceVariant,
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(group.projectTitle),
                 const SizedBox(height: 16),
-                const Text(
+                Text(
                   'GROUP MEMBERS',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 12,
+                    color: colors.onSurfaceVariant,
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -416,8 +426,8 @@ class _MyClassesPageState extends State<MyClassesPage> {
                             ? Icons.star
                             : Icons.person_outline,
                         color: isLeader
-                            ? AppColors.warning
-                            : null,
+                            ? colors.tertiary
+                            : colors.onSurfaceVariant,
                       ),
                       title: Text(member.displayName),
                       subtitle: Text(
@@ -431,7 +441,10 @@ class _MyClassesPageState extends State<MyClassesPage> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Close'),
+              child: Text(
+                'Close',
+                style: TextStyle(color: colors.primary),
+              ),
             ),
           ],
         );
@@ -441,14 +454,16 @@ class _MyClassesPageState extends State<MyClassesPage> {
 
   // Display recent announcements retrieved from the backend.
   Widget _buildAnnouncementCard(Announcement announcement) {
+    final colors = Theme.of(context).colorScheme;
+
     return InfoCard(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(
+          Icon(
             Icons.campaign_outlined,
             size: 24,
-            color: AppColors.primary,
+            color: colors.primary,
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -462,19 +477,25 @@ class _MyClassesPageState extends State<MyClassesPage> {
                 const SizedBox(height: 5),
                 Text(
                   announcement.content,
-                  style: subStyle,
+                  style: subStyle.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
                   maxLines: 3,
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 8),
                 Text(
                   _announcementTargetLabel(announcement),
-                  style: subStyle,
+                  style: subStyle.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   _formatDate(announcement.createdAt),
-                  style: subStyle,
+                  style: subStyle.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),
@@ -491,10 +512,10 @@ class _MyClassesPageState extends State<MyClassesPage> {
       return InfoCard(
         child: Column(
           children: [
-            const Icon(
+            Icon(
               Icons.school_outlined,
               size: 40,
-              color: AppColors.textMuted,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
             const SizedBox(height: 8),
             Text(
@@ -504,10 +525,12 @@ class _MyClassesPageState extends State<MyClassesPage> {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 4),
-            const Text(
+            Text(
               'Your assigned classes and project groups will appear here.',
               textAlign: TextAlign.center,
-              style: subStyle,
+              style: subStyle.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
           ],
         ),
@@ -523,24 +546,28 @@ class _MyClassesPageState extends State<MyClassesPage> {
 
   Widget _buildRecentAnnouncements() {
     if (_announcements.isEmpty) {
-      return const InfoCard(
+      final colors = Theme.of(context).colorScheme;
+
+      return InfoCard(
         child: Column(
           children: [
             Icon(
               Icons.campaign_outlined,
               size: 36,
-              color: AppColors.textMuted,
+              color: colors.onSurfaceVariant,
             ),
-            SizedBox(height: 8),
-            Text(
+            const SizedBox(height: 8),
+            const Text(
               'No announcements yet.',
               textAlign: TextAlign.center,
             ),
-            SizedBox(height: 4),
+            const SizedBox(height: 4),
             Text(
               'Announcements for your classes and groups will appear here.',
               textAlign: TextAlign.center,
-              style: subStyle,
+              style: subStyle.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
             ),
           ],
         ),
@@ -654,10 +681,13 @@ class _MyClassesPageState extends State<MyClassesPage> {
 
           const SectionHeading('My groups'),
           if (_filteredGroups.isEmpty)
-            const InfoCard(
+            InfoCard(
               child: Text(
                 'No groups found.',
                 textAlign: TextAlign.center,
+                style: subStyle.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             )
           else
@@ -675,12 +705,14 @@ class _MyClassesPageState extends State<MyClassesPage> {
     String value,
     String label,
   ) {
+    final colors = Theme.of(context).colorScheme;
+
     return Column(
       children: [
         Icon(
           icon,
           size: 22,
-          color: AppColors.primary,
+          color: colors.primary,
         ),
         const SizedBox(height: 6),
         Text(
@@ -690,7 +722,9 @@ class _MyClassesPageState extends State<MyClassesPage> {
         const SizedBox(height: 3),
         Text(
           label,
-          style: subStyle,
+          style: subStyle.copyWith(
+            color: colors.onSurfaceVariant,
+          ),
           textAlign: TextAlign.center,
         ),
       ],

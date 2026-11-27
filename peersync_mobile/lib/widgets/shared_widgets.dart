@@ -80,12 +80,27 @@ class ScreenHeading extends StatelessWidget {
             ),
           Semantics(
             header: true,
-            child: Text(title, style: headlineStyle),
+            child: Text(
+              title,
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                fontSize: 23,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -.6,
+                height: 1.25,
+              ),
+            ),
           ),
           if (detail != null)
             Padding(
               padding: const EdgeInsets.only(top: 5),
-              child: Text(detail!, style: subStyle),
+              child: Text(
+                detail!,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontSize: 12,
+                  height: 1.4,
+                ),
+              ),
             ),
         ],
       ),
@@ -131,10 +146,10 @@ class SectionHeading extends StatelessWidget {
               header: true,
               child: Text(
                 title,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
+                  color: Theme.of(context).colorScheme.onSurface,
                 ),
               ),
             ),
@@ -142,9 +157,9 @@ class SectionHeading extends StatelessWidget {
           if (action != null)
             Text(
               action!,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
-                color: AppColors.textSecondary,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
                 decoration: TextDecoration.underline,
               ),
             ),
@@ -154,6 +169,7 @@ class SectionHeading extends StatelessWidget {
   }
 }
 
+
 class InfoCard extends StatelessWidget {
   final Widget child;
 
@@ -161,12 +177,14 @@ class InfoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: card,
-        border: Border.all(color: line),
+        color: colorScheme.surface,
+        border: Border.all(color: colorScheme.outlineVariant),
         borderRadius: BorderRadius.circular(6),
       ),
       child: child,
@@ -174,11 +192,13 @@ class InfoCard extends StatelessWidget {
   }
 }
 
+
 /// Compact status/label pill.
 ///
 /// [dark] renders a navy pill with white text (15.77:1); [danger] renders a
 /// red-tinted pill with dark red text (5.53:1). Both are readable and both
 /// carry a text label, so color is never the only signal.
+
 class BadgeX extends StatelessWidget {
   final String text;
   final bool dark;
@@ -201,21 +221,25 @@ class BadgeX extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
     final foreground = dark
-        ? Colors.white
+        ? colors.onPrimary
         : danger
-            ? AppColors.danger
-            : AppColors.textSecondary;
+            ? colors.onErrorContainer
+            : colors.onSurfaceVariant;
+
     final background = dark
-        ? AppColors.primary
+        ? colors.primary
         : danger
-            ? AppColors.dangerSurface
-            : AppColors.neutralSurface;
+            ? colors.errorContainer
+            : colors.surfaceContainerHighest;
+
     final borderColor = dark
-        ? AppColors.primary
+        ? colors.primary
         : danger
-            ? AppColors.danger
-            : AppColors.borderStrong;
+            ? colors.error
+            : colors.outlineVariant;
 
     return Semantics(
       label: semanticLabel ?? text,
@@ -253,6 +277,7 @@ class BadgeX extends StatelessWidget {
 }
 
 /// Status pill that always pairs an icon, a text label, and a tone color.
+
 class StatusChip extends StatelessWidget {
   final StatusPresentation presentation;
 
@@ -267,6 +292,9 @@ class StatusChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final foreground = presentation.foregroundFor(context);
+    final background = presentation.backgroundFor(context);
+
     final label = prefix == null
         ? presentation.label
         : '$prefix: ${presentation.label}';
@@ -277,8 +305,8 @@ class StatusChip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
         decoration: BoxDecoration(
-          color: presentation.background,
-          border: Border.all(color: presentation.foreground),
+          color: background,
+          border: Border.all(color: foreground),
           borderRadius: BorderRadius.circular(4),
         ),
         child: Row(
@@ -288,7 +316,7 @@ class StatusChip extends StatelessWidget {
               child: Icon(
                 presentation.icon,
                 size: 14,
-                color: presentation.foreground,
+                color: foreground,
               ),
             ),
             const SizedBox(width: 5),
@@ -298,7 +326,7 @@ class StatusChip extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
-                  color: presentation.foreground,
+                  color: foreground,
                 ),
               ),
             ),
@@ -319,6 +347,7 @@ class ProgressBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     final clamped = value.isNaN ? 0.0 : value.clamp(0.0, 1.0);
     final percent = (clamped * 100).round();
 
@@ -331,8 +360,8 @@ class ProgressBar extends StatelessWidget {
           child: LinearProgressIndicator(
             value: clamped,
             minHeight: 6,
-            backgroundColor: AppColors.border,
-            color: AppColors.primary,
+            backgroundColor: colors.surfaceContainerHighest,
+            color: colors.primary,
           ),
         ),
       ),
@@ -354,6 +383,8 @@ class StatTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
     return Semantics(
       label: '$label: $number',
       container: true,
@@ -361,26 +392,28 @@ class StatTile extends StatelessWidget {
         margin: const EdgeInsets.only(right: 4),
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 3),
         decoration: BoxDecoration(
-          color: highlighted ? AppColors.neutralSurface : card,
-          border: Border.all(color: line),
+          color: highlighted
+              ? colors.surfaceContainerHighest
+              : colors.surface,
+          border: Border.all(color: colors.outlineVariant),
         ),
         child: ExcludeSemantics(
           child: Column(
             children: [
               Text(
                 number,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w800,
-                  color: AppColors.textPrimary,
+                  color: colors.onSurface,
                 ),
               ),
               Text(
                 label,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11,
-                  color: AppColors.textSecondary,
+                  color: colors.onSurfaceVariant,
                 ),
               ),
             ],
@@ -391,6 +424,7 @@ class StatTile extends StatelessWidget {
   }
 }
 
+
 class MetricsRow extends StatelessWidget {
   final List<(String, String)> items;
 
@@ -398,6 +432,8 @@ class MetricsRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
     return Row(
       children: items.map((entry) {
         return Expanded(
@@ -409,18 +445,18 @@ class MetricsRow extends StatelessWidget {
                 children: [
                   Text(
                     entry.$1,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w800,
-                      color: AppColors.textPrimary,
+                      color: colors.onSurface,
                     ),
                   ),
                   Text(
                     entry.$2,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
-                      color: AppColors.textSecondary,
+                      color: colors.onSurfaceVariant,
                     ),
                   ),
                 ],
@@ -451,15 +487,18 @@ class DataRowTile extends StatelessWidget {
     this.onTap,
   });
 
+
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
     final row = Container(
       constraints: const BoxConstraints(minHeight: _minTapTarget),
       margin: const EdgeInsets.only(bottom: 5),
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
       decoration: BoxDecoration(
-        color: card,
-        border: Border.all(color: line),
+        color: colors.surface,
+        border: Border.all(color: colors.outlineVariant),
         borderRadius: BorderRadius.circular(5),
       ),
       child: Row(
@@ -470,16 +509,16 @@ class DataRowTile extends StatelessWidget {
               height: 34,
               alignment: Alignment.center,
               decoration: BoxDecoration(
-                color: AppColors.neutralSurface,
-                border: Border.all(color: line),
+                color: colors.surfaceContainerHighest,
+                border: Border.all(color: colors.outlineVariant),
                 shape: BoxShape.circle,
               ),
               child: Text(
                 leading!,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
+                  color: colors.onSurface,
                 ),
               ),
             ),
@@ -489,13 +528,18 @@ class DataRowTile extends StatelessWidget {
               height: 34,
               alignment: Alignment.center,
               decoration: BoxDecoration(
-                color: AppColors.neutralSurface,
-                border: Border.all(color: line),
+                color: colors.surfaceContainerHighest,
+                border: Border.all(color: colors.outlineVariant),
                 borderRadius: BorderRadius.circular(4),
               ),
-              child: Icon(icon, size: 18, color: AppColors.primary),
+              child: Icon(
+                icon,
+                size: 18,
+                color: colors.primary,
+              ),
             ),
-          if (leading != null || icon != null) const SizedBox(width: 9),
+          if (leading != null || icon != null)
+            const SizedBox(width: 9),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -504,10 +548,10 @@ class DataRowTile extends StatelessWidget {
                   title,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
+                    color: colors.onSurface,
                   ),
                 ),
                 if (subtitle != null)
@@ -517,7 +561,11 @@ class DataRowTile extends StatelessWidget {
                       subtitle!,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: subStyle,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: colors.onSurfaceVariant,
+                        height: 1.4,
+                      ),
                     ),
                   ),
               ],
@@ -528,19 +576,19 @@ class DataRowTile extends StatelessWidget {
               padding: const EdgeInsets.only(left: 6),
               child: Text(
                 trailing!,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
-                  color: AppColors.textSecondary,
+                  color: colors.onSurfaceVariant,
                   fontWeight: FontWeight.w600,
                 ),
               ),
             )
           else
-            const ExcludeSemantics(
+            ExcludeSemantics(
               child: Icon(
                 Icons.chevron_right,
                 size: 20,
-                color: AppColors.softIcon,
+                color: colors.onSurfaceVariant,
               ),
             ),
         ],
@@ -892,6 +940,7 @@ class AttachmentTile extends StatelessWidget {
   }
 }
 
+
 class QuickAction extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -906,6 +955,8 @@ class QuickAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
     return Semantics(
       button: true,
       label: label,
@@ -917,23 +968,23 @@ class QuickAction extends StatelessWidget {
           margin: const EdgeInsets.only(right: 5),
           padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
           decoration: BoxDecoration(
-            color: card,
-            border: Border.all(color: line),
+            color: colors.surface,
+            border: Border.all(color: colors.outlineVariant),
             borderRadius: BorderRadius.circular(5),
           ),
           child: ExcludeSemantics(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(icon, size: 20, color: AppColors.primary),
+                Icon(icon, size: 20, color: colors.primary),
                 const SizedBox(height: 6),
                 Text(
                   label,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
+                    color: colors.onSurface,
                   ),
                 ),
               ],
@@ -944,6 +995,7 @@ class QuickAction extends StatelessWidget {
     );
   }
 }
+
 
 class QuickTile extends StatelessWidget {
   final IconData icon;
@@ -959,6 +1011,8 @@ class QuickTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
     return Semantics(
       label: '$title. $subtitle',
       container: true,
@@ -967,30 +1021,30 @@ class QuickTile extends StatelessWidget {
         margin: const EdgeInsets.only(right: 5),
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
         decoration: BoxDecoration(
-          color: card,
-          border: Border.all(color: line),
+          color: colors.surface,
+          border: Border.all(color: colors.outlineVariant),
           borderRadius: BorderRadius.circular(5),
         ),
         child: ExcludeSemantics(
           child: Column(
             children: [
-              Icon(icon, size: 19, color: AppColors.primary),
+              Icon(icon, size: 19, color: colors.primary),
               const SizedBox(height: 6),
               Text(
                 title,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
+                  color: colors.onSurface,
                 ),
               ),
               Text(
                 subtitle,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11,
-                  color: AppColors.textSecondary,
+                  color: colors.onSurfaceVariant,
                 ),
               ),
             ],
@@ -1000,6 +1054,7 @@ class QuickTile extends StatelessWidget {
     );
   }
 }
+
 
 class DeadlineCard extends StatelessWidget {
   final String day;
@@ -1024,6 +1079,8 @@ class DeadlineCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
     return MergeSemantics(
       child: Semantics(
         label: '$label. $title. $subtitle',
@@ -1034,25 +1091,25 @@ class DeadlineCard extends StatelessWidget {
                 child: Container(
                   width: 48,
                   padding: const EdgeInsets.symmetric(vertical: 8),
-                  decoration: const BoxDecoration(
-                    color: AppColors.neutralSurface,
+                  decoration: BoxDecoration(
+                    color: colors.surfaceContainerHighest,
                   ),
                   child: Column(
                     children: [
                       Text(
                         day,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w800,
-                          color: AppColors.textPrimary,
+                          color: colors.onSurface,
                         ),
                       ),
                       if (month != null)
                         Text(
                           month!.toUpperCase(),
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 11,
-                            color: AppColors.textSecondary,
+                            color: colors.onSurfaceVariant,
                           ),
                         ),
                     ],
@@ -1075,10 +1132,10 @@ class DeadlineCard extends StatelessWidget {
                   ],
                 ),
               ),
-              const ExcludeSemantics(
+              ExcludeSemantics(
                 child: Icon(
                   Icons.chevron_right,
-                  color: AppColors.softIcon,
+                  color: colors.onSurfaceVariant,
                 ),
               ),
             ],
@@ -1105,18 +1162,21 @@ class SwitchTile extends StatefulWidget {
   State<SwitchTile> createState() => _SwitchTileState();
 }
 
+
 class _SwitchTileState extends State<SwitchTile> {
   bool enabled = true;
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
     return Container(
       constraints: const BoxConstraints(minHeight: _minTapTarget),
       margin: const EdgeInsets.only(bottom: 5),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: card,
-        border: Border.all(color: line),
+        color: colors.surface,
+        border: Border.all(color: colors.outlineVariant),
         borderRadius: BorderRadius.circular(5),
       ),
       child: Row(
@@ -1127,10 +1187,10 @@ class _SwitchTileState extends State<SwitchTile> {
               children: [
                 Text(
                   widget.title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
+                    color: colors.onSurface,
                   ),
                 ),
                 Text(widget.subtitle, style: subStyle),
@@ -1152,6 +1212,7 @@ class _SwitchTileState extends State<SwitchTile> {
   }
 }
 
+
 class DetailLine extends StatelessWidget {
   final String label;
   final String value;
@@ -1160,6 +1221,8 @@ class DetailLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
     return MergeSemantics(
       child: Semantics(
         label: '$label: $value',
@@ -1174,10 +1237,10 @@ class DetailLine extends StatelessWidget {
                 child: Text(
                   value,
                   textAlign: TextAlign.right,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
+                    color: colors.onSurface,
                   ),
                 ),
               ),
@@ -1190,6 +1253,7 @@ class DetailLine extends StatelessWidget {
 }
 
 /// Consistent loading state with a screen-reader announcement.
+
 class LoadingView extends StatelessWidget {
   final String message;
 
@@ -1197,6 +1261,8 @@ class LoadingView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
     return Semantics(
       liveRegion: true,
       label: message,
@@ -1204,11 +1270,20 @@ class LoadingView extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 32),
         child: Column(
           children: [
-            const ExcludeSemantics(
-              child: CircularProgressIndicator(),
+            ExcludeSemantics(
+              child: CircularProgressIndicator(
+                color: colors.primary,
+              ),
             ),
             const SizedBox(height: 12),
-            Text(message, style: subStyle, textAlign: TextAlign.center),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 12,
+                color: colors.onSurfaceVariant,
+              ),
+            ),
           ],
         ),
       ),
@@ -1217,6 +1292,7 @@ class LoadingView extends StatelessWidget {
 }
 
 /// Consistent empty state.
+
 class EmptyStateView extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -1231,6 +1307,8 @@ class EmptyStateView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
     return Semantics(
       container: true,
       label: message == null ? title : '$title. $message',
@@ -1241,7 +1319,7 @@ class EmptyStateView extends StatelessWidget {
               child: Icon(
                 icon,
                 size: 40,
-                color: AppColors.softIcon,
+                color: colors.onSurfaceVariant,
               ),
             ),
             const SizedBox(height: 10),
@@ -1269,6 +1347,7 @@ class EmptyStateView extends StatelessWidget {
 ///
 /// The message is a friendly sentence produced by
 /// `friendlyErrorMessage`; raw exception text must not be passed here.
+
 class ErrorStateView extends StatelessWidget {
   final String message;
   final VoidCallback? onRetry;
@@ -1283,6 +1362,8 @@ class ErrorStateView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
     return Semantics(
       container: true,
       liveRegion: true,
@@ -1290,20 +1371,20 @@ class ErrorStateView extends StatelessWidget {
       child: InfoCard(
         child: Column(
           children: [
-            const ExcludeSemantics(
+            ExcludeSemantics(
               child: Icon(
                 Icons.error_outline,
                 size: 36,
-                color: AppColors.danger,
+                color: colors.error,
               ),
             ),
             const SizedBox(height: 10),
             Text(
               message,
               textAlign: TextAlign.center,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13,
-                color: AppColors.textPrimary,
+                color: colors.onSurface,
                 height: 1.4,
               ),
             ),
@@ -1370,26 +1451,22 @@ const headlineStyle = TextStyle(
   fontSize: 23,
   fontWeight: FontWeight.w700,
   letterSpacing: -.6,
-  color: AppColors.textPrimary,
   height: 1.25,
 );
 
 const titleStyle = TextStyle(
   fontSize: 14,
   fontWeight: FontWeight.w700,
-  color: AppColors.textPrimary,
   height: 1.35,
 );
 
 const subStyle = TextStyle(
   fontSize: 12,
-  color: AppColors.textSecondary,
   height: 1.4,
 );
 
 const tinyCaps = TextStyle(
   fontSize: 11,
-  color: AppColors.textSecondary,
   letterSpacing: 1,
   fontWeight: FontWeight.w700,
 );
