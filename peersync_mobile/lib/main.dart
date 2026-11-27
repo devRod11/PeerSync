@@ -27,6 +27,7 @@ import 'pages/profile_page.dart';
 import 'pages/progress_monitoring_page.dart';
 import 'pages/student_announcements_page.dart';
 import 'pages/student_dashboard_page.dart';
+import 'pages/user_management_page.dart';
 import 'services/api_service.dart';
 import 'theme/app_colors.dart';
 import 'theme/app_theme.dart';
@@ -529,6 +530,7 @@ class _PeerSyncShellState extends State<PeerSyncShell>
         : const [
             ('Dashboard', Icons.home_outlined, 1),
             ('Classes', Icons.menu_book_outlined, 2),
+            ('Users', Icons.manage_accounts_outlined, 12),
             ('Progress', Icons.bar_chart, 3),
             ('Updates', Icons.campaign_outlined, 4),
             ('Profile', Icons.person_outline, 11),
@@ -537,7 +539,7 @@ class _PeerSyncShellState extends State<PeerSyncShell>
 
   void go(int index) {
     setState(() {
-      current = index.clamp(0, 11).toInt();
+      current = index.clamp(0, 12).toInt();
     });
 
     if (index == 10) {
@@ -576,6 +578,8 @@ class _PeerSyncShellState extends State<PeerSyncShell>
                     ? 'Announcements'
                     : current == 5
                     ? 'Classes'
+                    : current == 12
+                    ? 'Users'
                     : 'Dashboard'));
 
     final windowSize = windowSizeOf(context);
@@ -1007,6 +1011,8 @@ Widget _page(
       );
     case 11:
       return ProfilePage(user: user);
+    case 12:
+      return const UserManagementPage();
     default:
       return const SizedBox.shrink();
   }

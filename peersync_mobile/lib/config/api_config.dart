@@ -48,6 +48,7 @@ class ApiConfig {
   static String get professorLogout => '$baseUrl/auth/professor/logout';
   static String get projects => '$baseUrl/projects/';
   static String get groups => '$baseUrl/groups/';
+  static String get users => '$baseUrl/users/';
   static String get milestones => '$baseUrl/milestones/';
   static String get tasks => '$baseUrl/tasks/';
   static String get submissions => '$baseUrl/submissions/';

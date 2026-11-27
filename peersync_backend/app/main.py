@@ -17,7 +17,8 @@ from app.routers import (
     tasks,
     google_drive,
     google_calendar,
-    email_digests
+    email_digests,
+    users
 )
 
 
@@ -51,6 +52,7 @@ app.include_router(notifications.router)
 app.include_router(google_drive.router)
 app.include_router(google_calendar.router)
 app.include_router(email_digests.router)
+app.include_router(users.router)
 
 # CORS: the allowed origins are configurable through the CORS_ALLOW_ORIGINS
 # environment variable (comma separated). The default keeps the previous

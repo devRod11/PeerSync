@@ -215,7 +215,7 @@ class _MyClassesPageState extends State<MyClassesPage> {
         children: [
           Row(
             children: [
-              BadgeX('MY CLASS', dark: true),
+              const BadgeX('MY CLASS', dark: true),
               const Spacer(),
               Text(
                 '${groups.length} ${groups.length == 1 ? 'GROUP' : 'GROUPS'}',
