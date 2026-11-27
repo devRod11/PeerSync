@@ -422,6 +422,40 @@ class ApiService {
     return AuthenticatedUser.fromJson(userData);
   }
 
+  /// Creates a Firebase Authentication account and its
+  /// corresponding Firestore user profile through FastAPI.
+  ///
+  /// Only an authenticated, OTP-verified Professor can
+  /// successfully execute this request.
+  static Future<Map<String, dynamic>> createUser({
+    required String displayName,
+    required String email,
+    required String password,
+    required String role,
+  }) async {
+    final response = await post(
+      ApiConfig.users,
+      body: {
+        'displayName': displayName.trim(),
+        'email': email.trim().toLowerCase(),
+        'password': password,
+        'role': role.trim().toLowerCase(),
+      },
+    );
+
+    if (response is! Map<String, dynamic>) {
+      throw Exception('Invalid user creation response.');
+    }
+
+    final userData = response['user'];
+
+    if (userData is! Map<String, dynamic>) {
+      throw Exception('Created user information is missing.');
+    }
+
+    return response;
+  }
+
   // --------------------------------------------------
   // Google Calendar Integration
   // --------------------------------------------------

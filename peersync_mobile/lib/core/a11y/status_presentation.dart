@@ -49,6 +49,53 @@ class StatusPresentation {
     }
   }
 
+  /// Theme-aware foreground color for status indicators.
+  Color foregroundFor(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    switch (tone) {
+      case StatusTone.success:
+        return isDark ? AppColors.darkSuccess : AppColors.success;
+      case StatusTone.warning:
+        return isDark ? AppColors.darkWarning : AppColors.warning;
+      case StatusTone.danger:
+        return isDark ? AppColors.darkDanger : AppColors.danger;
+      case StatusTone.info:
+        return isDark ? AppColors.darkInfo : AppColors.info;
+      case StatusTone.neutral:
+        return isDark ? AppColors.darkNeutral : AppColors.neutral;
+    }
+  }
+
+  /// Theme-aware background color for status indicators.
+  Color backgroundFor(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    switch (tone) {
+      case StatusTone.success:
+        return isDark
+            ? AppColors.darkSuccessSurface
+            : AppColors.successSurface;
+      case StatusTone.warning:
+        return isDark
+            ? AppColors.darkWarningSurface
+            : AppColors.warningSurface;
+      case StatusTone.danger:
+        return isDark
+            ? AppColors.darkDangerSurface
+            : AppColors.dangerSurface;
+      case StatusTone.info:
+        return isDark
+            ? AppColors.darkInfoSurface
+            : AppColors.infoSurface;
+      case StatusTone.neutral:
+        return isDark
+            ? AppColors.darkNeutralSurface
+            : AppColors.neutralSurface;
+    }
+  }
+
+
   /// Aggregate task status: pending / in_progress / completed.
   factory StatusPresentation.forTask(String status) {
     switch (status.trim().toLowerCase()) {

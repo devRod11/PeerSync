@@ -37,12 +37,7 @@ class AppColors {
   static const Color textPrimary = primary;
   static const Color textSecondary = Color(0xFF4A5568);
   static const Color textMuted = Color(0xFF5A6577);
-
-  /// Legacy alias kept for existing screen code. Now points at the
-  /// contrast-safe secondary tier instead of the failing `#64748B`.
   static const Color muted = textSecondary;
-
-  /// Decorative icon tint only. Never the sole carrier of meaning.
   static const Color softIcon = Color(0xFF64748B);
 
   // ---------------------------------------------------------------------
@@ -50,13 +45,8 @@ class AppColors {
   // ---------------------------------------------------------------------
   /// Decorative dividers and card fills only (1.21:1 — not a boundary).
   static const Color border = Color(0xFFD8E1F0);
-
-  /// Any border that is the only visual boundary of a control (4.37:1).
   static const Color borderStrong = Color(0xFF64748B);
-
   static const Color avatar = Color(0xFFDCE5F2);
-
-  /// Focus ring. Navy on the light background is 14.47:1.
   static const Color focus = primary;
 
   // ---------------------------------------------------------------------
@@ -77,6 +67,38 @@ class AppColors {
 
   static const Color neutral = Color(0xFF4A5568);
   static const Color neutralSurface = Color(0xFFEDF1F8);
+
+  // ---------------------------------------------------------------------
+  // Dark theme — comfortable navy/charcoal palette
+  // ---------------------------------------------------------------------
+  static const Color darkBackground = Color(0xFF111827);
+  static const Color darkSurface = Color(0xFF1E293B);
+  static const Color darkSurfaceElevated = Color(0xFF273449);
+
+  static const Color darkTextPrimary = Color(0xFFE5EAF3);
+  static const Color darkTextSecondary = Color(0xFFB0BDCF);
+  static const Color darkTextMuted = Color(0xFF94A3B8);
+
+  static const Color darkBorder = Color(0xFF334155);
+  static const Color darkBorderStrong = Color(0xFF64748B);
+
+  static const Color darkPrimary = Color(0xFF8FB8F0);
+  static const Color darkFocus = Color(0xFF93C5FD);
+
+  static const Color darkSuccess = Color(0xFF86EFAC);
+  static const Color darkSuccessSurface = Color(0xFF173A2A);
+
+  static const Color darkWarning = Color(0xFFFCD38D);
+  static const Color darkWarningSurface = Color(0xFF49351B);
+
+  static const Color darkDanger = Color(0xFFFCA5A5);
+  static const Color darkDangerSurface = Color(0xFF482323);
+
+  static const Color darkInfo = Color(0xFF93C5FD);
+  static const Color darkInfoSurface = Color(0xFF1E3655);
+
+  static const Color darkNeutral = Color(0xFFCBD5E1);
+  static const Color darkNeutralSurface = Color(0xFF334155);
 }
 
 // Backwards-compatible names used by the existing screen widgets.

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_colors.dart';
 
@@ -337,5 +338,298 @@ class AppTheme {
       ),
       focusColor: AppColors.primary,
     );
+  }
+
+    static ThemeData get dark {
+      const background = AppColors.darkBackground;
+      const surface = AppColors.darkSurface;
+      const primary = AppColors.darkPrimary;
+      const textPrimary = AppColors.darkTextPrimary;
+      const textSecondary = AppColors.darkTextSecondary;
+      const border = AppColors.darkBorder;
+      const borderStrong = AppColors.darkBorderStrong;
+
+      const colorScheme = ColorScheme.dark(
+        primary: primary,
+        onPrimary: AppColors.primary,
+        secondary: Color(0xFF93C5FD),
+        onSecondary: AppColors.primary,
+        surface: surface,
+        onSurface: textPrimary,
+        error: AppColors.darkDanger,
+        onError: AppColors.primary,
+      );
+
+      final inputBorder = OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: borderStrong),
+      );
+
+      return ThemeData(
+        useMaterial3: true,
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: background,
+        colorScheme: colorScheme,
+        fontFamily: 'Roboto',
+        visualDensity: VisualDensity.standard,
+        materialTapTargetSize: MaterialTapTargetSize.padded,
+        textTheme: const TextTheme(
+          displaySmall: TextStyle(
+            fontSize: 28,
+            fontWeight: FontWeight.w700,
+            color: textPrimary,
+            height: 1.2,
+          ),
+          headlineMedium: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.w700,
+            color: textPrimary,
+          ),
+          headlineSmall: TextStyle(
+            fontSize: 21,
+            fontWeight: FontWeight.w700,
+            color: textPrimary,
+          ),
+          titleLarge: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+            color: textPrimary,
+          ),
+          titleMedium: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+            color: textPrimary,
+          ),
+          titleSmall: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: textPrimary,
+          ),
+          bodyLarge: TextStyle(
+            fontSize: 15,
+            color: textPrimary,
+            height: 1.45,
+          ),
+          bodyMedium: TextStyle(
+            fontSize: 13,
+            color: textSecondary,
+            height: 1.45,
+          ),
+          bodySmall: TextStyle(
+            fontSize: 12,
+            color: textSecondary,
+          ),
+          labelLarge: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: textPrimary,
+          ),
+          labelMedium: TextStyle(
+            fontSize: 12,
+            color: textSecondary,
+          ),
+          labelSmall: TextStyle(
+            fontSize: 11,
+            color: textSecondary,
+          ),
+        ),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: background,
+          foregroundColor: textPrimary,
+          elevation: 0,
+          toolbarHeight: 56,
+          surfaceTintColor: Colors.transparent,
+          titleTextStyle: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w800,
+            color: textPrimary,
+          ),
+          iconTheme: IconThemeData(color: primary),
+        ),
+        cardTheme: CardThemeData(
+          color: surface,
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+            side: const BorderSide(color: border),
+          ),
+        ),
+        dividerTheme: const DividerThemeData(
+          color: border,
+          thickness: 1,
+          space: 1,
+        ),
+        iconTheme: const IconThemeData(color: primary, size: 24),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: AppColors.darkSurfaceElevated,
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 14,
+          ),
+          border: inputBorder,
+          enabledBorder: inputBorder,
+          disabledBorder: inputBorder,
+          focusedBorder: inputBorder.copyWith(
+            borderSide: const BorderSide(color: primary, width: 2),
+          ),
+          errorBorder: inputBorder.copyWith(
+            borderSide: const BorderSide(
+              color: AppColors.darkDanger,
+              width: 1.5,
+            ),
+          ),
+          focusedErrorBorder: inputBorder.copyWith(
+            borderSide: const BorderSide(
+              color: AppColors.darkDanger,
+              width: 2,
+            ),
+          ),
+          labelStyle: const TextStyle(color: textSecondary),
+          floatingLabelStyle: const TextStyle(color: primary),
+          hintStyle: const TextStyle(color: AppColors.darkTextMuted),
+          helperStyle: const TextStyle(color: textSecondary),
+          errorStyle: const TextStyle(color: AppColors.darkDanger),
+        ),
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            backgroundColor: primary,
+            foregroundColor: AppColors.primary,
+            minimumSize: const Size(64, minTapTarget),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 18,
+              vertical: 12,
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: primary,
+            minimumSize: const Size(64, minTapTarget),
+            side: const BorderSide(color: borderStrong),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        ),
+        textButtonTheme: TextButtonThemeData(
+          style: TextButton.styleFrom(
+            foregroundColor: primary,
+            minimumSize: const Size(minTapTarget, minTapTarget),
+          ),
+        ),
+        iconButtonTheme: IconButtonThemeData(
+          style: IconButton.styleFrom(
+            foregroundColor: primary,
+            minimumSize: const Size(minTapTarget, minTapTarget),
+          ),
+        ),
+        checkboxTheme: CheckboxThemeData(
+          fillColor: WidgetStateProperty.resolveWith(
+            (states) => states.contains(WidgetState.selected)
+                ? primary
+                : surface,
+          ),
+          checkColor: const WidgetStatePropertyAll(AppColors.primary),
+          side: const BorderSide(color: borderStrong),
+        ),
+        switchTheme: SwitchThemeData(
+          thumbColor: const WidgetStatePropertyAll(textPrimary),
+          trackColor: WidgetStateProperty.resolveWith(
+            (states) => states.contains(WidgetState.selected)
+                ? primary
+                : borderStrong,
+          ),
+        ),
+        chipTheme: const ChipThemeData(
+          backgroundColor: surface,
+          selectedColor: AppColors.darkInfoSurface,
+          disabledColor: AppColors.darkNeutralSurface,
+          side: BorderSide(color: borderStrong),
+          labelStyle: TextStyle(color: textPrimary),
+          secondaryLabelStyle: TextStyle(color: primary),
+        ),
+        progressIndicatorTheme: const ProgressIndicatorThemeData(
+          color: primary,
+          linearTrackColor: border,
+          circularTrackColor: border,
+        ),
+        dialogTheme: DialogThemeData(
+          backgroundColor: surface,
+          surfaceTintColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 24,
+            vertical: 24,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          titleTextStyle: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+            color: textPrimary,
+          ),
+          contentTextStyle: const TextStyle(
+            fontSize: 14,
+            color: textSecondary,
+            height: 1.45,
+          ),
+        ),
+        bottomSheetTheme: const BottomSheetThemeData(
+          backgroundColor: surface,
+          surfaceTintColor: Colors.transparent,
+        ),
+        snackBarTheme: const SnackBarThemeData(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: AppColors.darkSurfaceElevated,
+          contentTextStyle: TextStyle(
+            fontSize: 14,
+            color: textPrimary,
+          ),
+          actionTextColor: primary,
+        ),
+        textSelectionTheme: const TextSelectionThemeData(
+          cursorColor: primary,
+          selectionColor: AppColors.darkInfoSurface,
+          selectionHandleColor: primary,
+        ),
+        focusColor: primary,
+      );
+    }
+}
+
+/// Persists and controls the app-wide theme preference.
+class AppThemeController extends ChangeNotifier {
+  AppThemeController._();
+
+  static final AppThemeController instance = AppThemeController._();
+
+  static const String _preferenceKey = 'peersync_dark_theme';
+
+  bool _isDarkMode = false;
+
+  bool get isDarkMode => _isDarkMode;
+
+  ThemeMode get themeMode =>
+      _isDarkMode ? ThemeMode.dark : ThemeMode.light;
+
+  Future<void> load() async {
+    final preferences = await SharedPreferences.getInstance();
+    _isDarkMode = preferences.getBool(_preferenceKey) ?? false;
+  }
+
+  Future<void> setDarkMode(bool enabled) async {
+    if (_isDarkMode == enabled) return;
+
+    _isDarkMode = enabled;
+    notifyListeners();
+
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setBool(_preferenceKey, enabled);
   }
 }

@@ -27,6 +27,7 @@ import 'pages/profile_page.dart';
 import 'pages/progress_monitoring_page.dart';
 import 'pages/student_announcements_page.dart';
 import 'pages/student_dashboard_page.dart';
+import 'pages/user_management_page.dart';
 import 'services/api_service.dart';
 import 'theme/app_colors.dart';
 import 'theme/app_theme.dart';
@@ -50,7 +51,7 @@ Future<void> main() async {
 
   // Drop cache entries older than three days before the first request runs.
   unawaited(OfflineCache.pruneExpired());
-
+  await AppThemeController.instance.load();
   runApp(const PeerSyncApp());
 }
 
@@ -58,13 +59,22 @@ class PeerSyncApp extends StatelessWidget {
   const PeerSyncApp({super.key});
 
   @override
-  Widget build(BuildContext context) => MaterialApp(
-    title: 'PeerSync',
-    debugShowCheckedModeBanner: false,
-    theme: AppTheme.light,
-    scaffoldMessengerKey: peersyncMessengerKey,
-    home: const AuthGate(),
-  );
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: AppThemeController.instance,
+      builder: (context, _) {
+        return MaterialApp(
+          title: 'PeerSync',
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.light,
+          darkTheme: AppTheme.dark,
+          themeMode: AppThemeController.instance.themeMode,
+          scaffoldMessengerKey: peersyncMessengerKey,
+          home: const AuthGate(),
+        );
+      },
+    );
+  }
 }
 
 class AuthGate extends StatefulWidget {
@@ -212,7 +222,8 @@ class _AuthGateState extends State<AuthGate> {
     return FutureBuilder<void>(
       future: _sessionInitialization,
       builder: (context, initializationSnapshot) {
-        if (initializationSnapshot.connectionState == ConnectionState.waiting) {
+        if (initializationSnapshot.connectionState ==
+            ConnectionState.waiting) {
           return const Scaffold(
             body: LoadingView(message: 'Starting PeerSync…'),
           );
@@ -224,7 +235,7 @@ class _AuthGateState extends State<AuthGate> {
               message:
                   'Unable to initialize your login session. '
                   'Please restart the app and try again.',
-            ),
+          ),
           );
         }
 
@@ -519,6 +530,7 @@ class _PeerSyncShellState extends State<PeerSyncShell>
         : const [
             ('Dashboard', Icons.home_outlined, 1),
             ('Classes', Icons.menu_book_outlined, 2),
+            ('Users', Icons.manage_accounts_outlined, 12),
             ('Progress', Icons.bar_chart, 3),
             ('Updates', Icons.campaign_outlined, 4),
             ('Profile', Icons.person_outline, 11),
@@ -527,7 +539,7 @@ class _PeerSyncShellState extends State<PeerSyncShell>
 
   void go(int index) {
     setState(() {
-      current = index.clamp(0, 11).toInt();
+      current = index.clamp(0, 12).toInt();
     });
 
     if (index == 10) {
@@ -566,6 +578,8 @@ class _PeerSyncShellState extends State<PeerSyncShell>
                     ? 'Announcements'
                     : current == 5
                     ? 'Classes'
+                    : current == 12
+                    ? 'Users'
                     : 'Dashboard'));
 
     final windowSize = windowSizeOf(context);
@@ -607,6 +621,8 @@ class _PeerSyncShellState extends State<PeerSyncShell>
           : AppBar(
               automaticallyImplyLeading: false,
               titleSpacing: 16,
+              backgroundColor: Theme.of(context).colorScheme.surface,
+              foregroundColor: Theme.of(context).colorScheme.onSurface,
               title: Semantics(
                 header: true,
                 label: 'PeerSync${activeLabel.isEmpty ? '' : ', $activeLabel'}',
@@ -617,7 +633,10 @@ class _PeerSyncShellState extends State<PeerSyncShell>
                         width: 27,
                         height: 27,
                         decoration: BoxDecoration(
-                          border: Border.all(color: ink, width: 1.5),
+                          border: Border.all(
+                            color: Theme.of(context).colorScheme.primary,
+                            width: 1.5,
+                          ),
                           borderRadius: const BorderRadius.only(
                             topLeft: Radius.circular(7),
                             topRight: Radius.circular(7),
@@ -626,21 +645,22 @@ class _PeerSyncShellState extends State<PeerSyncShell>
                           ),
                         ),
                         alignment: Alignment.center,
-                        child: const Text(
+                        child: Text(
                           'P',
                           style: TextStyle(
                             fontWeight: FontWeight.w800,
                             fontSize: 13,
+                            color: Theme.of(context).colorScheme.onSurface,
                           ),
                         ),
                       ),
                       const SizedBox(width: 8),
-                      const Text(
+                      Text(
                         'PeerSync',
                         style: TextStyle(
                           fontWeight: FontWeight.w800,
                           fontSize: 17,
-                          color: ink,
+                          color: Theme.of(context).colorScheme.onSurface,
                         ),
                       ),
                     ],
@@ -657,7 +677,10 @@ class _PeerSyncShellState extends State<PeerSyncShell>
                     child: Stack(
                       clipBehavior: Clip.none,
                       children: [
-                        const Icon(Icons.notifications_none, color: ink),
+                        Icon(
+                          Icons.notifications_none,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
                         if (_unreadNotificationCount > 0)
                           Positioned(
                             right: -6,
@@ -671,8 +694,8 @@ class _PeerSyncShellState extends State<PeerSyncShell>
                                 horizontal: 4,
                                 vertical: 2,
                               ),
-                              decoration: const BoxDecoration(
-                                color: AppColors.danger,
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).colorScheme.error,
                                 shape: BoxShape.circle,
                               ),
                               alignment: Alignment.center,
@@ -680,8 +703,8 @@ class _PeerSyncShellState extends State<PeerSyncShell>
                                 _unreadNotificationCount > 99
                                     ? '99+'
                                     : '$_unreadNotificationCount',
-                                style: const TextStyle(
-                                  color: Colors.white,
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.onError,
                                   fontSize: 11,
                                   fontWeight: FontWeight.bold,
                                 ),
@@ -695,7 +718,10 @@ class _PeerSyncShellState extends State<PeerSyncShell>
                 IconButton(
                   tooltip: 'Sign out',
                   onPressed: _confirmSignOut,
-                  icon: const Icon(Icons.logout, color: ink),
+                  icon: Icon(
+                    Icons.logout,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),
@@ -703,7 +729,10 @@ class _PeerSyncShellState extends State<PeerSyncShell>
           ? Row(
               children: [
                 _sideNavigation(items, windowSize),
-                const VerticalDivider(width: 1, color: AppColors.border),
+                VerticalDivider(
+                  width: 1,
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
                 Expanded(child: content),
               ],
             )
@@ -719,13 +748,27 @@ class _PeerSyncShellState extends State<PeerSyncShell>
     List<(String, IconData, int)> items,
     WindowSize windowSize,
   ) {
+    final colors = Theme.of(context).colorScheme;
     final selectedIndex = items.indexWhere((item) => item.$3 == current);
 
     return NavigationRail(
       extended: windowSize.isExpanded,
       minExtendedWidth: 208,
-      backgroundColor: AppColors.background,
-      indicatorColor: AppColors.infoSurface,
+      backgroundColor: colors.surface,
+      indicatorColor: colors.surfaceContainerHighest,
+      selectedIconTheme: IconThemeData(
+        color: colors.primary,
+      ),
+      unselectedIconTheme: IconThemeData(
+        color: colors.onSurfaceVariant,
+      ),
+      selectedLabelTextStyle: TextStyle(
+        color: colors.primary,
+        fontWeight: FontWeight.w700,
+      ),
+      unselectedLabelTextStyle: TextStyle(
+        color: colors.onSurfaceVariant,
+      ),
       selectedIndex: selectedIndex < 0 ? 0 : selectedIndex,
       labelType: windowSize.isExpanded
           ? NavigationRailLabelType.none
@@ -738,7 +781,7 @@ class _PeerSyncShellState extends State<PeerSyncShell>
             width: 34,
             height: 34,
             decoration: BoxDecoration(
-              border: Border.all(color: ink, width: 1.5),
+              border: Border.all(color: colors.primary, width: 1.5),
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(9),
                 topRight: Radius.circular(9),
@@ -747,9 +790,13 @@ class _PeerSyncShellState extends State<PeerSyncShell>
               ),
             ),
             alignment: Alignment.center,
-            child: const Text(
+            child: Text(
               'P',
-              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 16,
+                color: colors.onSurface,
+              ),
             ),
           ),
         ),
@@ -758,13 +805,14 @@ class _PeerSyncShellState extends State<PeerSyncShell>
         for (final item in items)
           NavigationRailDestination(
             icon: Icon(item.$2),
-            selectedIcon: Icon(item.$2, color: ink),
+            selectedIcon: Icon(item.$2),
             label: Text(item.$1),
             padding: const EdgeInsets.symmetric(vertical: 4),
           ),
       ],
     );
   }
+
 
   Future<void> _confirmSignOut() async {
     final shouldSignOut = await showConfirmDialog(
@@ -808,10 +856,14 @@ class _PeerSyncShellState extends State<PeerSyncShell>
     String active,
     ValueChanged<int> go,
   ) {
+    final colors = Theme.of(context).colorScheme;
+
     return DecoratedBox(
-      decoration: const BoxDecoration(
-        color: AppColors.background,
-        border: Border(top: BorderSide(color: AppColors.border)),
+      decoration: BoxDecoration(
+        color: colors.surface,
+        border: Border(
+          top: BorderSide(color: colors.outlineVariant),
+        ),
       ),
       child: SafeArea(
         top: false,
@@ -824,7 +876,10 @@ class _PeerSyncShellState extends State<PeerSyncShell>
               final selected =
                   active == item.$1 ||
                   (active == 'Announcements' && item.$1 == 'Updates');
-              final color = selected ? ink : AppColors.textSecondary;
+
+              final color = selected
+                  ? colors.primary
+                  : colors.onSurfaceVariant;
 
               return Expanded(
                 child: Semantics(
@@ -856,7 +911,7 @@ class _PeerSyncShellState extends State<PeerSyncShell>
                               width: 14,
                               height: 2,
                               margin: const EdgeInsets.only(top: 2),
-                              color: ink,
+                              color: colors.primary,
                             ),
                         ],
                       ),
@@ -956,6 +1011,8 @@ Widget _page(
       );
     case 11:
       return ProfilePage(user: user);
+    case 12:
+      return const UserManagementPage();
     default:
       return const SizedBox.shrink();
   }
