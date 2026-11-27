@@ -456,6 +456,63 @@ class ApiService {
     return response;
   }
 
+  /// Retrieves all user accounts.
+  ///
+  /// Only an authenticated, OTP-verified Professor can
+  /// successfully execute this request.
+  static Future<List<Map<String, dynamic>>> getUsers() async {
+    final response = await get(ApiConfig.users, cache: false);
+
+    if (response is! Map<String, dynamic>) {
+      throw Exception('Invalid users response.');
+    }
+
+    final usersData = response['users'];
+
+    if (usersData is! List) {
+      throw Exception('Invalid users list.');
+    }
+
+    return usersData.map((item) {
+      if (item is! Map) {
+        throw Exception('Invalid user record.');
+      }
+
+      return Map<String, dynamic>.from(item);
+    }).toList();
+  }
+
+
+  /// Activates or deactivates a user account.
+  ///
+  /// Only an authenticated, OTP-verified Professor can
+  /// successfully execute this request.
+  static Future<Map<String, dynamic>> updateUserStatus({
+    required String uid,
+    required bool isActive,
+  }) async {
+    if (uid.trim().isEmpty) {
+      throw Exception('User ID is required.');
+    }
+
+    final response = await patch(
+      '${ApiConfig.users}${Uri.encodeComponent(uid)}/status',
+      body: {'isActive': isActive},
+    );
+
+    if (response is! Map<String, dynamic>) {
+      throw Exception('Invalid user status update response.');
+    }
+
+    final userData = response['user'];
+
+    if (userData is! Map<String, dynamic>) {
+      throw Exception('Updated user information is missing.');
+    }
+
+    return response;
+  }
+
   // --------------------------------------------------
   // Google Calendar Integration
   // --------------------------------------------------
